@@ -32,8 +32,11 @@ router.get("/preview/:id", async function (req, res, next) {
     }
 
     res.json(201, {
-      data: application,
+      main_system: application.main_system,
+      lowest: application.lowest,
+      highest: application.highest,
       zbiorcza: zbiorcza_TP,
+      // application,
     });
   } catch (e) {
     res.json(400, { message: e, error: e });
