@@ -25,23 +25,23 @@ const createZBIORCZA_TP = (application) => {
   const m_max_sum = summary(application.m_max);
 
   delete m_spiral_sum[""];
-  delete m_spiral_sum["220-320"];
-  delete m_spiral_sum["320-420"];
-  delete m_spiral_sum["350-550"];
-  delete m_spiral_sum["550-750"];
-  delete m_spiral_sum["750-950"];
 
-  delete m_standard_sum["10-17"];
-  delete m_standard_sum["17-30"];
-  delete m_standard_sum["350-550"];
-  delete m_standard_sum["550-750"];
-  delete m_standard_sum["750-950"];
+  let main_keys = "";
 
-  delete m_standard_sum["10-17"];
-  delete m_standard_sum["17-30"];
-  delete m_standard_sum["30-50"];
+  switch (application.main_system) {
+    case "spiral":
+      main_keys = m_spiral_sum;
+      break;
+    case "standard":
+      main_keys = m_standard_sum;
+      break;
+    case "max":
+      main_keys = m_max_sum;
+      break;
+  }
 
   return {
+    main_keys: main_keys,
     m_spiral: m_spiral_sum,
     m_standard: m_standard_sum,
     m_max: m_max_sum,
