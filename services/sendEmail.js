@@ -1,40 +1,38 @@
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
+const hbs = require('nodemailer-express-handlebars');
 
-async function sendEmail(to, subject, templateName, replacements) {
-  let transporter = nodemailer.createTransport({
-    host: process.env.MAIL_HOST,
-    port: process.env.MAIL_PORT,
-    secure: true,
-    auth: {
-      user: process.env.MAIL_USERNAME,
-      pass: process.env.MAIL_PASSWORD,
-    },
-  });
+const emailTransporter = nodemailer.createTransport({
+  host: process.env.MAIL_HOST,
+  port: process.env.MAIL_PORT,
+  secure: true,
+  auth: {
+    user: process.env.MAIL_USERNAME,
+    pass: process.env.MAIL_PASSWORD,
+  },
+});
 
-  // Read the email template
-  const templatePath = path.join(
-    __dirname,
-    '../views/emails',
-    `${templateName}.html`,
-  );
-  let html = fs.readFileSync(templatePath, 'utf8');
+// Configure template engine and specify the path to templates
+const handlebarOptions = {
+  viewEngine: {
+    extName: '.handlebars',
+    partialsDir: path.resolve('./views/emails'),
+    defaultLayout: false,
+  },
+  viewPath: path.resolve('./views/emails'),
+  extName: '.handlebars',
+};
 
-  // Read and replace placeholders in the template
-  for (const key in replacements) {
-    html = html.replace(new RegExp(`{{${key}}}`, 'g'), replacements[key]);
+emailTransporter.use('compile', hbs(handlebarOptions));
+
+async function sendEmail(emailOptions) {
+  try {
+    await emailTransporter.sendMail(emailOptions);
+    console.log('Email sent successfully');
+  } catch (error) {
+    console.error('Failed to send email', error);
   }
-
-  // Send mail with defined transport object
-  let info = await transporter.sendMail({
-    from: '"DDGRO" <info@j-filipiak.pl>',
-    to: to,
-    subject: subject,
-    html: html,
-  });
-
-  console.log('Message sent: %s', info.messageId);
 }
 
 module.exports = sendEmail;
