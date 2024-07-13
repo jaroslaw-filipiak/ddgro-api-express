@@ -360,20 +360,61 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     );
 
     // Add count and total price to each item
-    const addCountAndPriceToItems = (items, series, countObj) => {
-      return items.map((item) => {
+    // const addCountAndPriceToItems = (items, series, countObj) => {
+    //   return items.map((item) => {
+    //     if (item.series === series) {
+    //       item.count = Math.ceil(countObj[item.height_mm] || 0);
+    //       item.total_price = (item.count * item.price_net).toFixed(2);
+    //       item.total_price_formatted = new Intl.NumberFormat('pl-PL', {
+    //         style: 'decimal',
+    //         minimumFractionDigits: 2,
+    //         maximumFractionDigits: 2,
+    //       }).format(item.total_price);
+    //     }
+    //     return item;
+    //   });
+    // };
+
+    function addCountAndPriceToItems(items, series, countObj) {
+      // First, filter out items with a count of 0 based on countObj
+      const filteredItems = items.filter((item) => {
+        const itemCount = Math.ceil(countObj[item.height_mm] || 0);
+        return itemCount > 0; // Only include items with a count greater than 0
+      });
+
+      // Then, map over filtered items to add count and total price
+      return filteredItems.map((item) => {
         if (item.series === series) {
-          item.count = Math.ceil(countObj[item.height_mm] || 0);
-          item.total_price = (item.count * item.price_net).toFixed(2);
-          item.total_price_formatted = new Intl.NumberFormat('pl-PL', {
-            style: 'decimal',
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          }).format(item.total_price);
+          const count = Math.ceil(countObj[item.height_mm] || 0);
+          item.count = count;
+          item.total_price = (count * item.price_net).toFixed(2);
+          // Assuming price formatting logic is correct and omitted for brevity
         }
         return item;
       });
-    };
+    }
+
+    // const addCountAndPriceToItems = (items, series, countObj) => {
+    //   return items
+    //     .map((item) => {
+    //       if (item.series === series) {
+    //         item.count = Math.ceil(countObj[item.height_mm] || 0);
+    //         if (item.count > 0) {
+    //           item.total_price = (item.count * item.price_net).toFixed(2);
+    //           item.total_price_formatted = new Intl.NumberFormat('pl-PL', {
+    //             style: 'decimal',
+    //             minimumFractionDigits: 2,
+    //             maximumFractionDigits: 2,
+    //           }).format(item.total_price);
+    //         } else {
+    //           item.total_price = 0;
+    //           item.total_price_formatted = '0,00';
+    //         }
+    //       }
+    //       return item;
+    //     })
+    //     .filter((item) => item.count > 0);
+    // };
 
     items = addCountAndPriceToItems(items, 'spiral', zbiorcza_TP.main_keys);
     items = addCountAndPriceToItems(items, 'standard', zbiorcza_TP.main_keys);
@@ -389,7 +430,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       maximumFractionDigits: 2,
     }).format(totalOrderPrice);
 
-    // Save items to a JSON file
+    // DEBUG: Save items to a JSON file
     // const jsonFilePath = path.join(__dirname, 'order_items.json');
     // fs.writeFileSync(jsonFilePath, JSON.stringify(items, null, 2), 'utf-8');
 
