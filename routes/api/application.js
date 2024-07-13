@@ -364,19 +364,34 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       return items.map((item) => {
         if (item.series === series) {
           item.count = Math.ceil(countObj[item.height_mm] || 0);
-          item.total_price = (item.count * item.price_net).toFixed(2); // Ensure price is in PLN and formatted to two decimal places
+          item.total_price = (item.count * item.price_net).toFixed(2);
+          item.total_price_formatted = new Intl.NumberFormat('pl-PL', {
+            style: 'decimal',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }).format(item.total_price);
         }
         return item;
       });
     };
 
-    items = addCountAndPriceToItems(items, 'spiral', zbiorcza_TP.m_spiral);
-    items = addCountAndPriceToItems(items, 'standard', zbiorcza_TP.m_standard);
-    items = addCountAndPriceToItems(items, 'max', zbiorcza_TP.m_max);
+    items = addCountAndPriceToItems(items, 'spiral', zbiorcza_TP.main_keys);
+    items = addCountAndPriceToItems(items, 'standard', zbiorcza_TP.main_keys);
+    items = addCountAndPriceToItems(items, 'max', zbiorcza_TP.main_keys);
+
+    // Calculate total price of the full order
+    const totalOrderPrice = items
+      .reduce((sum, item) => sum + parseFloat(item.total_price), 0)
+      .toFixed(2);
+    const total = new Intl.NumberFormat('pl-PL', {
+      style: 'decimal',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(totalOrderPrice);
 
     // Save items to a JSON file
-    const jsonFilePath = path.join(__dirname, 'order_items.json');
-    fs.writeFileSync(jsonFilePath, JSON.stringify(items, null, 2), 'utf-8');
+    // const jsonFilePath = path.join(__dirname, 'order_items.json');
+    // fs.writeFileSync(jsonFilePath, JSON.stringify(items, null, 2), 'utf-8');
 
     const emailOptions = {
       from: '"DDGRO" <info@j-filipiak.pl>',
@@ -386,6 +401,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       context: {
         name,
         items,
+        total,
       },
     };
 
