@@ -42,29 +42,28 @@ router.get("/preview/:id", async function (req, res, next) {
     //
     // ======================================================================
 
-    const keys_spiral = Object.keys(zbiorcza_TP.m_spiral);
     const values_spiral = Object.values(zbiorcza_TP.m_spiral);
 
     const pipeline_spiral = [
       {
-        $match: { height_mm: { $in: keys_spiral }, type: application.type },
+        $match: { height_mm: { $in: main_keys }, type: application.type },
       },
       {
         $addFields: {
           sortKey: {
             $switch: {
-              branches: keys_spiral.map((key, index) => ({
+              branches: main_keys.map((key, index) => ({
                 case: { $eq: ["$height_mm", key] },
                 then: index,
               })),
-              default: keys_spiral.length, // Ensures any unmatched documents appear last
+              default: main_keys.length, // Ensures any unmatched documents appear last
             },
           },
           count: {
             $arrayElemAt: [
               values_spiral,
               {
-                $indexOfArray: [keys_spiral, "$height_mm"],
+                $indexOfArray: [main_keys, "$height_mm"],
               },
             ],
           },
@@ -86,29 +85,28 @@ router.get("/preview/:id", async function (req, res, next) {
     //
     // ======================================================================
 
-    const keys_standard = Object.keys(zbiorcza_TP.m_standard);
     const values_standard = Object.values(zbiorcza_TP.m_standard);
 
     const pipeline_standard = [
       {
-        $match: { height_mm: { $in: keys_standard }, type: application.type },
+        $match: { height_mm: { $in: main_keys }, type: application.type },
       },
       {
         $addFields: {
           sortKey: {
             $switch: {
-              branches: keys_standard.map((key, index) => ({
+              branches: main_keys.map((key, index) => ({
                 case: { $eq: ["$height_mm", key] },
                 then: index,
               })),
-              default: keys_standard.length, // Ensures any unmatched documents appear last
+              default: main_keys.length, // Ensures any unmatched documents appear last
             },
           },
           count: {
             $arrayElemAt: [
               values_standard,
               {
-                $indexOfArray: [keys_standard, "$height_mm"],
+                $indexOfArray: [main_keys, "$height_mm"],
               },
             ],
           },
@@ -130,29 +128,28 @@ router.get("/preview/:id", async function (req, res, next) {
     //
     // ======================================================================
 
-    const keys_max = Object.keys(zbiorcza_TP.m_max);
     const values_max = Object.values(zbiorcza_TP.m_max);
 
     const pipeline_max = [
       {
-        $match: { height_mm: { $in: keys_max }, type: application.type },
+        $match: { height_mm: { $in: main_keys }, type: application.type },
       },
       {
         $addFields: {
           sortKey: {
             $switch: {
-              branches: keys_max.map((key, index) => ({
+              branches: main_keys.map((key, index) => ({
                 case: { $eq: ["$height_mm", key] },
                 then: index,
               })),
-              default: keys_max.length, // Ensures any unmatched documents appear last
+              default: main_keys.length, // Ensures any unmatched documents appear last
             },
           },
           count: {
             $arrayElemAt: [
               values_max,
               {
-                $indexOfArray: [keys_max, "$height_mm"],
+                $indexOfArray: [main_keys, "$height_mm"],
               },
             ],
           },
@@ -170,14 +167,87 @@ router.get("/preview/:id", async function (req, res, next) {
 
     // ======================================================================
     //
-    // NUMBER VALUES
+    // REMOVE UNUSED VALUES FROM SPIRAL
     //
     // ======================================================================
 
+    const excludeFromSpiral = [
+      "10-17",
+      "120-220",
+      "220-320",
+      "320-420",
+      "350-550",
+      "550-750",
+      "750-950",
+    ];
+    let filteredSpiral = products_spiral.filter(
+      (product) => !excludeFromSpiral.includes(product.height_mm)
+    );
+
+    // ======================================================================
+    //
+    // REMOVE UNUSED VALUES FROM STANDARD
+    //
+    // ======================================================================
+
+    const excludeFromStandard = [
+      "10-17",
+      "17-30",
+      "350-550",
+      "550-750",
+      "750-950",
+    ];
+    let filteredStandard = products_spiral.filter(
+      (product) => !excludeFromStandard.includes(product.height_mm)
+    );
+
+    // ======================================================================
+    //
+    // REMOVE UNUSED VALUES FROM MAX
+    //
+    // ======================================================================
+
+    const excludeFromMax = ["10-17", "17-30", "30-50"];
+    let filteredMax = products_spiral.filter(
+      (product) => !excludeFromMax.includes(product.height_mm)
+    );
+
+    // ======================================================================
+    //
+    // TIME TO CREATE ORDER
+    // SPIRAL >> STANDARD >> MAX
+    //
+    // ======================================================================
+
+    // 1. Take all products from main system with his range
+
+    const orderArr = [
+      ...products_spiral,
+      ...products_standard,
+      ...products_max,
+    ];
+
+    function filterOrder(arr, lowest, highest) {
+      return arr.filter((product) => {
+        const [min, max] = product.height_mm.split("-").map(Number);
+        return min <= highest && max >= lowest; // Retain ranges that overlap with the provided range
+      });
+    }
+
+    const order = filterOrder(
+      orderArr,
+      parseInt(application.lowest),
+      parseInt(application.highest)
+    );
+
     res.status(200).json({
-      // products_spiral,
-      // products_standard,
-      // products_max,
+      application: application,
+      // system: application.main_system,
+      // type: application.type,
+      order: order,
+      // products_spiral: filteredSpiral,
+      // products_standard: filteredStandard,
+      // products_max: filteredMax,
       zbiorcza_TP: zbiorcza_TP,
     });
   } catch (e) {
