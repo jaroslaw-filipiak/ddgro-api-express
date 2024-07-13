@@ -63,17 +63,19 @@
       >
         <tr>
           <td width='60%' class='column-header'>Nazwa</td>
-          <td width='15%' class='column-header'>Wysokość [mm]</td>
-          <td width='15%' class='column-header'>Ilość</td>
+          <td width='10%' class='column-header'>Wysokość [mm]</td>
+          <td width='10%' class='column-header'>Ilość</td>
           <td width='10%' class='column-header'>Cena</td>
+          <td width='10%' class='column-header'>Łącznie</td>
         </tr>
 
         {{#each items}}
           <tr style='border-collapse: collapse; border-bottom: 1px solid #eee'>
-            <td>{{this.name}}</td>
+            <td>{{this.name}} ({{this.short_name}})</td>
             <td>{{this.height_mm}} </td>
             <td>{{this.count}}</td>
             <td>{{this.price_net}}</td>
+            <td>{{this.total_price}}</td>
           </tr>
         {{/each}}
 
