@@ -269,7 +269,7 @@ router.get('/preview/:id', async function (req, res, next) {
 
 router.post('/send-order-summary/:id', async function (req, res, next) {
   const id = req.params.id;
-  const { to, name } = req.body;
+  const { to } = req.body;
 
   try {
     const application = await Application.findById(id);
@@ -399,7 +399,6 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       subject: 'Twoje zestawienie wsporników DDGRO',
       template: 'order',
       context: {
-        name,
         items,
         total,
       },
