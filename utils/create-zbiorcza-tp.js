@@ -1,5 +1,5 @@
-const mongoose = require("mongoose");
-const Products = require("../models/Products");
+const mongoose = require('mongoose');
+const Products = require('../models/Products');
 
 const summary = (items, keysToKeep) => {
   const grouped = items.reduce((acc, item) => {
@@ -23,20 +23,24 @@ const createZBIORCZA_TP = (application) => {
   const m_spiral_sum = summary(application.m_spiral);
   const m_standard_sum = summary(application.m_standard);
   const m_max_sum = summary(application.m_max);
+  const m_raptor_sum = summary(application.m_raptor);
 
-  delete m_spiral_sum[""];
+  delete m_spiral_sum[''];
 
-  let main_keys = "";
+  let main_keys = '';
 
   switch (application.main_system) {
-    case "spiral":
+    case 'spiral':
       main_keys = m_spiral_sum;
       break;
-    case "standard":
+    case 'standard':
       main_keys = m_standard_sum;
       break;
-    case "max":
+    case 'max':
       main_keys = m_max_sum;
+      break;
+    case 'raptor':
+      main_keys = m_raptor_sum;
       break;
   }
 
@@ -45,6 +49,7 @@ const createZBIORCZA_TP = (application) => {
     m_spiral: m_spiral_sum,
     m_standard: m_standard_sum,
     m_max: m_max_sum,
+    m_raptor: m_raptor_sum,
   };
 };
 

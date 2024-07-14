@@ -1,5 +1,5 @@
-const express = require("express");
-const mongoose = require("mongoose");
+const express = require('express');
+const mongoose = require('mongoose');
 
 const ApplicationSchema = new mongoose.Schema({
   type: {
@@ -86,9 +86,9 @@ const ApplicationSchema = new mongoose.Schema({
   m_max: {
     type: Array,
   },
-  m_alu: {
+  m_raptor: {
     type: Array,
   },
 });
 
-module.exports = mongoose.model("Application", ApplicationSchema);
+module.exports = mongoose.model('Application', ApplicationSchema);
