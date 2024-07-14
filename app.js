@@ -17,14 +17,18 @@ var allowedOrigins = [
   'https://octopus-app-jmbhj.ondigitalocean.app',
 ];
 
-const corsOptions = {
-  origin: (origin, callback) => {
-    if (allowedOrigins.includes(origin) || !origin) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+// const corsOptions = {
+//   origin: (origin, callback) => {
+//     if (allowedOrigins.includes(origin) || !origin) {
+//       callback(null, true);
+//     } else {
+//       callback(new Error('Not allowed by CORS'));
+//     }
+//   },
+// };
+
+var corsOptions = {
+  origin: '*',
 };
 
 mongoose.connect(process.env.MONGODB_URI);
