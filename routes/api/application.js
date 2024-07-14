@@ -558,7 +558,34 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     items = addCountAndPriceToItems(items, 'standard', zbiorcza_TP.main_keys);
     items = addCountAndPriceToItems(items, 'max', zbiorcza_TP.main_keys);
 
-    // Calculate total price of the full order
+    // Add products from application.products with full info
+    const additionalProducts = application.products || [];
+    additionalProducts.forEach((additionalProduct) => {
+      const existingItem = items.find(
+        (item) => item.height_mm === additionalProduct.height_mm,
+      );
+      if (existingItem) {
+        existingItem.count += additionalProduct.count;
+        existingItem.total_price = (
+          existingItem.count * existingItem.price_net
+        ).toFixed(2);
+      } else {
+        items.push({
+          ...additionalProduct,
+          // height_mm: additionalProduct.height_mm,
+          count: additionalProduct.count,
+          price_net: additionalProduct.price_net,
+          total_price: (
+            additionalProduct.count * additionalProduct.price_net
+          ).toFixed(2),
+          // series: additionalProduct.series,
+          // name: additionalProduct.name, // Ensure the item name is included
+          // // Add any other necessary fields here
+        });
+      }
+    });
+
+    // Recalculate total price of the full order
     const totalOrderPrice = items
       .reduce((sum, item) => sum + parseFloat(item.total_price), 0)
       .toFixed(2);
@@ -568,9 +595,15 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       maximumFractionDigits: 2,
     }).format(totalOrderPrice);
 
-    // DEBUG: Save items to a JSON file
-    // const jsonFilePath = path.join(__dirname, 'order_items.json');
-    // fs.writeFileSync(jsonFilePath, JSON.stringify(items, null, 2), 'utf-8');
+    // Calculate total price of the full order
+    // const totalOrderPrice = items
+    //   .reduce((sum, item) => sum + parseFloat(item.total_price), 0)
+    //   .toFixed(2);
+    // const total = new Intl.NumberFormat('pl-PL', {
+    //   style: 'decimal',
+    //   minimumFractionDigits: 2,
+    //   maximumFractionDigits: 2,
+    // }).format(totalOrderPrice);
 
     const emailOptions = {
       from: '"DDGRO" <info@j-filipiak.pl>',
