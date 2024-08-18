@@ -56,6 +56,9 @@ const ApplicationSchema = new mongoose.Schema({
   email: {
     type: String,
   },
+  phone: {
+    type: String,
+  },
   profession: {
     type: String,
   },

@@ -388,7 +388,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     };
 
     await sendEmail(emailOptions);
-    res.send('Email is being sent. Items have been saved to order_items.json.');
+    res.send('Email is being sent.');
   } catch (e) {
     res.status(400).json({ message: e.message, error: e });
   }
