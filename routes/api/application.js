@@ -11,7 +11,6 @@ const { createZBIORCZA_TP } = require('../../utils/create-zbiorcza-tp');
 const Products = require('../../models/Products');
 
 const sendEmail = require('../../services/sendEmail');
-const { width } = require('pdfkit/js/page');
 
 router.post('/', async function (req, res, next) {
   const data = req.body;
