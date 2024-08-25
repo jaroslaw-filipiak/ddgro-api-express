@@ -489,7 +489,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       },
       attachments: [
         {
-          filename: 'order_summary.pdf',
+          filename: 'podsumowanie_wspornikow.pdf',
           path: pdfFilePath,
           contentType: 'application/pdf',
         },
