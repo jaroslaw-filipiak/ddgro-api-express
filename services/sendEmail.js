@@ -11,6 +11,8 @@ const emailTransporter = nodemailer.createTransport({
     user: process.env.MAIL_USERNAME,
     pass: process.env.MAIL_PASSWORD,
   },
+  debug: true, // Add this line
+  logger: true, // And this line
 });
 
 // Configure template engine and specify the path to templates

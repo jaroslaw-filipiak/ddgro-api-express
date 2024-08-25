@@ -3,11 +3,15 @@ const fs = require('fs');
 const path = require('path');
 const router = express.Router();
 const Application = require('../../models/Application');
+const PDFDocument = require('pdfkit');
+const pdfmake = require('pdfmake');
+const Handlebars = require('handlebars');
 
 const { createZBIORCZA_TP } = require('../../utils/create-zbiorcza-tp');
 const Products = require('../../models/Products');
 
 const sendEmail = require('../../services/sendEmail');
+const { width } = require('pdfkit/js/page');
 
 router.post('/', async function (req, res, next) {
   const data = req.body;
@@ -195,6 +199,7 @@ router.get('/preview/:id', async function (req, res, next) {
 });
 
 router.post('/send-order-summary/:id', async function (req, res, next) {
+  console.log('req.body:', req.body);
   const id = req.params.id;
   const { to } = req.body;
 
@@ -376,6 +381,104 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       maximumFractionDigits: 2,
     }).format(totalOrderPrice);
 
+    // Define fonts for pdfmake
+    const fonts = {
+      Roboto: {
+        normal: path.join(__dirname, '../../public/fonts/Roboto-Regular.ttf'),
+        bold: path.join(__dirname, '../../public/fonts/Roboto-Bold.ttf'),
+        italics: path.join(__dirname, '../../public/fonts/Roboto-Italic.ttf'),
+        bolditalics: path.join(
+          __dirname,
+          '../../public/fonts/Roboto-BoldItalic.ttf',
+        ),
+      },
+    };
+
+    const printer = new pdfmake(fonts);
+
+    const createPDF = async (items, total) => {
+      const docDefinition = {
+        pageOrientation: 'landscape', // Set the orientation to landscape
+        content: [
+          { text: 'Twoje zamówienie', style: 'header' },
+          { text: 'Zestawienie wsporników', style: 'subheader' },
+          {
+            style: 'tableExample',
+            table: {
+              headerRows: 1,
+              body: [
+                [
+                  { text: 'Nazwa Skrócona', style: 'tableHeader' },
+                  { text: 'Nazwa', style: 'tableHeader' },
+                  { text: 'Wysokość [mm]', style: 'tableHeader' },
+                  { text: 'Ilość', style: 'tableHeader' },
+                  { text: 'Cena katalogowa netto', style: 'tableHeader' },
+                  { text: 'Łącznie netto', style: 'tableHeader' },
+                ],
+                ...items.map((item) => [
+                  item.short_name,
+                  item.name,
+                  item.height_mm,
+                  item.count,
+                  item.price_net,
+                  item.total_price,
+                ]),
+              ],
+            },
+          },
+          {
+            text: `Łącznie netto: ${total}`,
+            alignment: 'right',
+            margin: [0, 20, 0, 0],
+          },
+        ],
+        styles: {
+          header: {
+            fontSize: 9,
+            bold: true,
+          },
+          subheader: {
+            fontSize: 10,
+            bold: true,
+            margin: [0, 10, 0, 5],
+          },
+          tableHeader: {
+            bold: true,
+            fontSize: 9,
+            color: 'black',
+          },
+          tableExample: {
+            width: '100%',
+            fontSize: 9,
+            margin: [0, 5, 0, 15],
+          },
+        },
+      };
+
+      // Create PDF document
+      const pdfDoc = printer.createPdfKitDocument(docDefinition);
+      const filePath = path.join(__dirname, 'zestawienie.pdf');
+      pdfDoc.pipe(fs.createWriteStream(filePath));
+      pdfDoc.end();
+
+      return new Promise((resolve, reject) => {
+        pdfDoc.on('end', () => {
+          resolve(filePath);
+        });
+        pdfDoc.on('error', (err) => {
+          reject(err);
+        });
+      });
+    };
+
+    const pdfFilePath = await createPDF(items, total);
+    console.log('PDF File Path:', pdfFilePath);
+
+    // Check if the file exists
+    if (!fs.existsSync(pdfFilePath)) {
+      return res.status(500).json({ message: 'Failed to create PDF file.' });
+    }
+
     const emailOptions = {
       from: '"DDGRO" <info@j-filipiak.pl>',
       to: to,
@@ -385,9 +488,23 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         items,
         total,
       },
+      attachments: [
+        {
+          filename: 'order_summary.pdf',
+          path: pdfFilePath,
+          contentType: 'application/pdf',
+        },
+      ],
     };
 
+    console.log('Email Options:', emailOptions);
+
     await sendEmail(emailOptions);
+    // Clean up the file after sending the email
+    fs.unlink(pdfFilePath, (err) => {
+      if (err) console.error('Failed to delete temporary PDF file:', err);
+    });
+
     res.send('Email is being sent.');
   } catch (e) {
     res.status(400).json({ message: e.message, error: e });
