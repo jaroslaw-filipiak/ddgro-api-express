@@ -1,16 +1,79 @@
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
+
 const router = express.Router();
 const Application = require('../../models/Application');
-const PDFDocument = require('pdfkit');
+
+const PDFDocument = require('pdfkit'); // going deprecated
+const Handlebars = require('handlebars'); // going deprecated
+
 const pdfmake = require('pdfmake');
-const Handlebars = require('handlebars');
+
+const fs = require('fs');
+const util = require('util');
+const readFile = util.promisify(fs.readFile);
+const path = require('path');
+const puppeteer = require('puppeteer');
 
 const { createZBIORCZA_TP } = require('../../utils/create-zbiorcza-tp');
 const Products = require('../../models/Products');
 
 const sendEmail = require('../../services/sendEmail');
+
+const generatePDF = async (items, total) => {
+  const browser = await puppeteer.launch({
+    headless: true, // Ensure headless mode is enabled
+    args: ['--no-sandbox', '--disable-setuid-sandbox'], // Optional: Useful for some environments
+  });
+  const page = await browser.newPage();
+
+  try {
+    // Read your HTML template
+    const templatePath = path.join(
+      __dirname,
+      '../../templates/pdf/template2.html',
+    );
+
+    let htmlTemplate = await readFile(templatePath, 'utf8');
+
+    console.log('htmlTemplate:', htmlTemplate);
+
+    // Replace placeholders in the template
+    const tableRows = items
+      .map(
+        (item) => `
+      <tr>
+        <td>${item.short_name || 'N/A'}</td>
+        <td>${item.name || 'N/A'}</td>
+        <td>${item.height_mm || '--'}</td>
+        <td>${item.count || 0}</td>
+        <td>${item.price_net || 0}</td>
+        <td>${item.total_price || 0}</td>
+      </tr>
+    `,
+      )
+      .join('');
+
+    htmlTemplate = htmlTemplate
+      .replace('{{TABLE_ROWS}}', tableRows)
+      .replace('{{TOTAL}}', total);
+
+    await page.setContent(htmlTemplate);
+
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      landscape: true,
+      printBackground: true,
+      margin: { top: '1cm', right: '1cm', bottom: '1cm', left: '1cm' },
+    });
+
+    return pdfBuffer;
+  } catch (error) {
+    console.error('Error generating PDF:', error);
+    throw error;
+  } finally {
+    await browser.close();
+  }
+};
 
 router.post('/', async function (req, res, next) {
   const data = req.body;
@@ -191,6 +254,32 @@ router.get('/preview/:id', async function (req, res, next) {
       order: order,
       zbiorcza_TP: zbiorcza_TP,
     });
+  } catch (e) {
+    console.error('Error:', e.message, e.stack);
+    res.status(400).json({ message: e.message, error: e });
+  }
+});
+
+router.get('/preview-pdf/:id', async function (req, res, next) {
+  try {
+    const id = req.params.id;
+
+    // Find the application in the database
+    const application = await Application.findById(id);
+
+    if (!application) {
+      return res.status(404).json({ message: 'Nie znaleziono formularza!' });
+    }
+
+    // Read the HTML template file
+    const templatePath = path.join(
+      __dirname,
+      '../../templates/pdf/template2.html',
+    );
+    const template = await readFile(templatePath, 'utf8'); // Use the promisified `readFile`
+
+    // Send the template as raw HTML content
+    res.send(template); // Use send() instead of render()
   } catch (e) {
     console.error('Error:', e.message, e.stack);
     res.status(400).json({ message: e.message, error: e });
@@ -406,103 +495,15 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       maximumFractionDigits: 2,
     }).format(totalOrderPrice);
 
-    // Define fonts for pdfmake
-    const fonts = {
-      Roboto: {
-        normal: path.join(__dirname, '../../public/fonts/Roboto-Regular.ttf'),
-        bold: path.join(__dirname, '../../public/fonts/Roboto-Bold.ttf'),
-        italics: path.join(__dirname, '../../public/fonts/Roboto-Italic.ttf'),
-        bolditalics: path.join(
-          __dirname,
-          '../../public/fonts/Roboto-BoldItalic.ttf',
-        ),
-      },
-    };
+    /**
+     *
+     *
+     *  Tworzenie pdfa
+     *
+     *
+     */
 
-    const printer = new pdfmake(fonts);
-
-    const createPDF = async (items, total) => {
-      const docDefinition = {
-        pageOrientation: 'landscape', // Set the orientation to landscape
-        content: [
-          { text: 'Twoje zamówienie', style: 'header' },
-          { text: 'Zestawienie wsporników', style: 'subheader' },
-          {
-            style: 'tableExample',
-            table: {
-              headerRows: 1,
-              body: [
-                [
-                  { text: 'Nazwa Skrócona', style: 'tableHeader' },
-                  { text: 'Nazwa', style: 'tableHeader' },
-                  { text: 'Wysokość [mm]', style: 'tableHeader' },
-                  { text: 'Ilość', style: 'tableHeader' },
-                  { text: 'Cena katalogowa netto', style: 'tableHeader' },
-                  { text: 'Łącznie netto', style: 'tableHeader' },
-                ],
-                ...items.map((item) => [
-                  item.short_name || 'N/A', // Default to 'N/A' if undefined
-                  item.name || 'N/A', // Default to 'N/A' if undefined
-                  item.height_mm || '--', // Default to 0 if undefined
-                  item.count || 0, // Default to 0 if undefined
-                  item.price_net || 0, // Default to 0 if undefined
-                  item.total_price || 0,
-                ]),
-              ],
-            },
-          },
-          {
-            text: `Łącznie netto: ${total}`,
-            alignment: 'right',
-            margin: [0, 20, 0, 0],
-          },
-        ],
-        styles: {
-          header: {
-            fontSize: 9,
-            bold: true,
-          },
-          subheader: {
-            fontSize: 10,
-            bold: true,
-            margin: [0, 10, 0, 5],
-          },
-          tableHeader: {
-            bold: true,
-            fontSize: 9,
-            color: 'black',
-          },
-          tableExample: {
-            width: '100%',
-            fontSize: 9,
-            margin: [0, 5, 0, 15],
-          },
-        },
-      };
-
-      // Create PDF document
-      const pdfDoc = printer.createPdfKitDocument(docDefinition);
-      const filePath = path.join(__dirname, 'zestawienie.pdf');
-      pdfDoc.pipe(fs.createWriteStream(filePath));
-      pdfDoc.end();
-
-      return new Promise((resolve, reject) => {
-        pdfDoc.on('end', () => {
-          resolve(filePath);
-        });
-        pdfDoc.on('error', (err) => {
-          reject(err);
-        });
-      });
-    };
-
-    const pdfFilePath = await createPDF(items, total);
-    console.log('PDF File Path:', pdfFilePath);
-
-    // Check if the file exists
-    if (!fs.existsSync(pdfFilePath)) {
-      return res.status(500).json({ message: 'Failed to create PDF file.' });
-    }
+    const pdfBuffer = await generatePDF(items, total);
 
     const emailOptions = {
       from: `"DDGRO" "<${process.env.MAIL_USERNAME}>" `,
@@ -516,7 +517,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       attachments: [
         {
           filename: 'podsumowanie_wspornikow.pdf',
-          path: pdfFilePath,
+          content: pdfBuffer,
           contentType: 'application/pdf',
         },
       ],
@@ -525,10 +526,6 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     console.log('Email Options:', emailOptions);
 
     await sendEmail(emailOptions);
-    // Clean up the file after sending the email
-    fs.unlink(pdfFilePath, (err) => {
-      if (err) console.error('Failed to delete temporary PDF file:', err);
-    });
 
     res.status(200).json({ message: 'Oferta została wysłana!' });
   } catch (e) {
