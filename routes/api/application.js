@@ -20,7 +20,7 @@ router.post('/', async function (req, res, next) {
     application.save();
 
     res.json(201, {
-      message: `Formularz został wysłany!`,
+      message: `Otzymaliśmy formularz... przygotowywanie do wysłania PDF`,
       id: application._id,
     });
   } catch (e) {
@@ -348,12 +348,29 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     items = addCountAndPriceToItems(items, 'raptor', zbiorcza_TP.main_keys);
 
     // Add products from application.products with full info
+
+    /**
+     *
+     *  Nie każdy element posiada height_mm, dlatego trzeba to sprawdzić
+     *
+     *
+     */
+
     const additionalProducts = application.products || [];
     additionalProducts.forEach((additionalProduct) => {
       const existingItem = items.find(
-        (item) => item.height_mm === additionalProduct.height_mm,
+        (item) => item.height_mm === additionalProduct?.height_mm,
       );
-      if (existingItem) {
+      /**
+       *
+       *  Zastosowanie tylko do produktów / wsporników które mają height_mm
+       *
+       */
+
+      if (
+        existingItem &&
+        existingItem.height_mm === additionalProduct.height_mm
+      ) {
         existingItem.count += additionalProduct.count;
         existingItem.total_price = (
           existingItem.count * existingItem.price_net
@@ -369,6 +386,15 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         });
       }
     });
+
+    /**
+     *
+     *  Jeszcze jezeli user wybierze dodatkowe akcesoria z kroku nr 5
+     *
+     *
+     */
+
+    const additionalAccessories = application.accessories || [];
 
     // Recalculate total price of the full order
     const totalOrderPrice = items
@@ -415,12 +441,12 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                   { text: 'Łącznie netto', style: 'tableHeader' },
                 ],
                 ...items.map((item) => [
-                  item.short_name,
-                  item.name,
-                  item.height_mm,
-                  item.count,
-                  item.price_net,
-                  item.total_price,
+                  item.short_name || 'N/A', // Default to 'N/A' if undefined
+                  item.name || 'N/A', // Default to 'N/A' if undefined
+                  item.height_mm || '--', // Default to 0 if undefined
+                  item.count || 0, // Default to 0 if undefined
+                  item.price_net || 0, // Default to 0 if undefined
+                  item.total_price || 0,
                 ]),
               ],
             },
@@ -479,7 +505,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     }
 
     const emailOptions = {
-      from: '"DDGRO" <info@j-filipiak.pl>',
+      from: `"DDGRO" "<${process.env.MAIL_USERNAME}>" `,
       to: to,
       subject: 'Twoje zestawienie wsporników DDGRO',
       template: 'order',
@@ -504,9 +530,12 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       if (err) console.error('Failed to delete temporary PDF file:', err);
     });
 
-    res.send('Email is being sent.');
+    res.status(200).json({ message: 'Oferta została wysłana!' });
   } catch (e) {
-    res.status(400).json({ message: e.message, error: e });
+    res.status(400).json({
+      message: `Wystąpił problem z wygenerowaniem oferty PDF (${e})`,
+      error: e,
+    });
   }
 });
 
