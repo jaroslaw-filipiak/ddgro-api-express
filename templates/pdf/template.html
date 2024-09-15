@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Zestawienie wsporników</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+      }
+      th {
+        background-color: #f2f2f2;
+      }
+      .total {
+        text-align: right;
+        font-weight: bold;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Twoje zamówienie // html template</h1>
+    <h2>Zestawienie wsporników</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Nazwa Skrócona</th>
+          <th>Nazwa</th>
+          <th>Wysokość [mm]</th>
+          <th>Ilość</th>
+          <th>Cena katalogowa netto</th>
+          <th>Łącznie netto</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{TABLE_ROWS}}
+      </tbody>
+    </table>
+    <div class="total">Łącznie netto: {{TOTAL}}</div>
+  </body>
+</html>

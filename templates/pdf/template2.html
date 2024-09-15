@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Zestawienie wsporników</title>
+    <style>
+      @media print {
+        body {
+          font-size: 12px; /* Adjust font size for PDF */
+        }
+
+        h1 {
+          font-size: 24px; /* Adjust font size for PDF */
+        }
+        h2 {
+          font-size: 20px; /* Adjust font size for PDF */
+        }
+        /* Additional print-specific styles */
+      }
+
+      body {
+        font-family: Arial, sans-serif;
+      }
+
+      .container {
+        width: 1280px;
+        margin: 0 auto;
+      }
+      table {
+        margin-top: 40px;
+        border-collapse: collapse;
+        margin: 0 auto;
+        width: 100%;
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+      }
+      th {
+        background-color: #f2f2f2;
+      }
+      .total {
+        text-align: right;
+        font-weight: bold;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div>
+        <svg
+          width="214"
+          height="45"
+          viewBox="0 0 214 45"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          xmlns:xlink="http://www.w3.org/1999/xlink"
+        >
+          <rect width="214" height="44.9213" fill="url(#pattern0)" />
+          <defs>
+            <pattern
+              id="pattern0"
+              patternContentUnits="objectBoundingBox"
+              width="1"
+              height="1"
+            >
+              <use
+                xlink:href="#image0_6_1624"
+                transform="scale(0.00291545 0.0138889)"
+              />
+            </pattern>
+            <image
+              id="image0_6_1624"
+              width="343"
+              height="72"
+              xlink:href="data:image/png;base64,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"
+            />
+          </defs>
+        </svg>
+      </div>
+      <h1>Twoje zamówienie</h1>
+      <h2>Zestawienie wsporników</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Nazwa Skrócona</th>
+            <th>Nazwa</th>
+            <th>Wysokość [mm]</th>
+            <th>Ilość</th>
+            <th>Cena katalogowa netto</th>
+            <th>Łącznie netto</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{TABLE_ROWS}}
+        </tbody>
+      </table>
+      <div class="total">Łącznie netto: {{TOTAL}}</div>
+    </div>
+  </body>
+</html>
