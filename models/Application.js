@@ -1,7 +1,12 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const { create } = require('./Products');
 
 const ApplicationSchema = new mongoose.Schema({
+  created_at: {
+    type: Date,
+    default: Date.now,
+  },
   type: {
     type: String,
   },

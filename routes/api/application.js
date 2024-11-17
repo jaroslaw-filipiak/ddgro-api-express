@@ -846,7 +846,12 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
 
     // Check if the file exists
     if (!fs.existsSync(pdfFilePath)) {
-      return res.status(500).json({ message: 'Failed to create PDF file.' });
+      return res
+        .status(500)
+        .json({
+          message:
+            'Nie udało się utoworzyć pliku PDF. Skontaktuj się z administratorem',
+        });
     }
 
     const emailOptions = {
