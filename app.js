@@ -15,20 +15,17 @@ var apiApplicationsRouter = require('./routes/api/application');
 var allowedOrigins = [
   'http://localhost:3000',
   'https://octopus-app-jmbhj.ondigitalocean.app',
+  'https://kalkulator.ddgro.eu',
 ];
 
-// const corsOptions = {
-//   origin: (origin, callback) => {
-//     if (allowedOrigins.includes(origin) || !origin) {
-//       callback(null, true);
-//     } else {
-//       callback(new Error('Not allowed by CORS'));
-//     }
-//   },
-// };
-
-var corsOptions = {
-  origin: '*',
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (allowedOrigins.includes(origin) || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
 };
 
 mongoose.connect(process.env.MONGODB_URI);
