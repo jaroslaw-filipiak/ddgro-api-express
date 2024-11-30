@@ -458,7 +458,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       const docDefinition = {
         pageSize: 'A4',
         pageOrientation: 'landscape',
-        pageMargins: [40, 60, 40, 80],
+        pageMargins: [40, 60, 40, 60],
         header: {
           columns: [
             {
@@ -480,7 +480,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           ],
         },
         footer: function (currentPage, pageCount) {
-          const commonFooter = {
+          return {
             columns: [
               { text: 'www.ddgro.com', alignment: 'left' },
               {
@@ -492,70 +492,6 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
             fontSize: 8,
             color: '#666666',
           };
-
-          if (currentPage === pageCount) {
-            return {
-              stack: [
-                commonFooter,
-                {
-                  columns: [
-                    {
-                      width: '33%',
-                      stack: [
-                        {
-                          text: 'Dlaczego warto zamówić u nas?',
-                          style: 'footerHeader',
-                          margin: [0, 0, 0, 10],
-                        },
-                        {
-                          ul: [
-                            'Oferowane produkty są produkowane w Polsce.',
-                            'Dostarczamy 1-2 dni na terenie PL.',
-                            'Pomożemy Ci obliczyć zapotrzebownie na ilość wsporników i ich wysokość.',
-                            'Nasze produkty posiadają Krajową Ocenę Techniczną ITB.',
-                            'Zamawiasz dokładnie tyle sztuk ile potrzebujesz.',
-                            'Masz możliwość zwrócenia niewykorzystanych ilości.',
-                          ],
-                          style: 'footerList',
-                          margin: [0, 0, 20, 0],
-                        },
-                      ],
-                    },
-                    {
-                      width: '33%',
-                      stack: [
-                        {
-                          image: path.join(
-                            __dirname,
-                            '../../public/images/qr-code.png',
-                          ),
-                          width: 150,
-                          alignment: 'center',
-                          margin: [0, 20, 0, 0],
-                        },
-                      ],
-                    },
-                    {
-                      width: '33%',
-                      stack: [
-                        {
-                          image: path.join(
-                            __dirname,
-                            '../../public/images/footer-image.png',
-                          ),
-                          width: 200,
-                          alignment: 'center',
-                          margin: [0, 20, 0, 0],
-                        },
-                      ],
-                    },
-                  ],
-                  margin: [40, 0, 40, 20],
-                },
-              ],
-            };
-          }
-          return commonFooter;
         },
         content: [
           { text: 'Zestawienie wsporników', style: 'mainHeader' },
@@ -659,7 +595,61 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
               },
             ],
             style: 'disclaimer',
-            margin: [0, 20, 0, 0],
+            margin: [0, 20, 0, 20],
+          },
+          {
+            columns: [
+              {
+                width: '33%',
+                stack: [
+                  {
+                    text: 'Dlaczego warto zamówić u nas?',
+                    style: 'footerHeader',
+                    margin: [0, 0, 0, 10],
+                  },
+                  {
+                    ul: [
+                      'Oferowane produkty są produkowane w Polsce.',
+                      'Dostarczamy 1-2 dni na terenie PL.',
+                      'Pomożemy Ci obliczyć zapotrzebownie na ilość wsporników i ich wysokość.',
+                      'Nasze produkty posiadają Krajową Ocenę Techniczną ITB.',
+                      'Zamawiasz dokładnie tyle sztuk ile potrzebujesz.',
+                      'Masz możliwość zwrócenia niewykorzystanych ilości.',
+                    ],
+                    style: 'footerList',
+                    margin: [0, 0, 20, 0],
+                  },
+                ],
+              },
+              {
+                width: '33%',
+                stack: [
+                  {
+                    image: path.join(
+                      __dirname,
+                      '../../public/images/qr-code.png',
+                    ),
+                    width: 150,
+                    alignment: 'center',
+                    margin: [0, 0, 0, 0],
+                  },
+                ],
+              },
+              {
+                width: '33%',
+                stack: [
+                  {
+                    image: path.join(
+                      __dirname,
+                      '../../public/images/footer-image.png',
+                    ),
+                    width: 200,
+                    alignment: 'center',
+                    margin: [0, 0, 0, 0],
+                  },
+                ],
+              },
+            ],
           },
         ],
         styles: {
@@ -734,8 +724,6 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         });
       });
     };
-
-    // const createPDF = async (items, total) => {
     //   const docDefinition = {
     //     pageOrientation: 'landscape', // Set the orientation to landscape
     //     content: [
