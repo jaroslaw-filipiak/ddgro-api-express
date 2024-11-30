@@ -455,29 +455,109 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     const printer = new pdfmake(fonts);
 
     const createPDF = async (items, total) => {
+      const getExpiryDate = () => {
+        const date = new Date();
+        date.setMonth(date.getMonth() + 1);
+        return date.toLocaleDateString('pl-PL');
+      };
+
       const docDefinition = {
         pageSize: 'A4',
         pageOrientation: 'landscape',
-        pageMargins: [40, 60, 40, 60],
-        header: {
-          columns: [
-            {
-              image: path.join(__dirname, '../../public/images/logo.png'),
-              width: 150,
-              margin: [40, 20, 0, 0],
-            },
-            {
+        pageMargins: [40, 120, 40, 60],
+        header: function (currentPage) {
+          const commonHeader = {
+            columns: [
+              {
+                image: path.join(__dirname, '../../public/images/logo.png'),
+                width: 150,
+                margin: [40, 20, 0, 0],
+              },
+              {
+                stack: [
+                  { text: 'Deck-Dry Polska sp. z o.o. ', style: 'companyName' },
+                  { text: 'ul. Wenus 73A', style: 'companyInfo' },
+                  { text: '80-299 Gdańsk', style: 'companyInfo' },
+                  { text: 'NIP: 5841183361', style: 'companyInfo' },
+                ],
+                alignment: 'right',
+                margin: [0, 20, 40, 0],
+              },
+            ],
+          };
+
+          if (currentPage === 1) {
+            return {
               stack: [
-                { text: 'DDGRO Sp. z o.o.', style: 'companyName' },
-                { text: 'ul. Przykładowa 123', style: 'companyInfo' },
-                { text: '00-000 Warszawa', style: 'companyInfo' },
-                { text: 'NIP: 000-000-00-00', style: 'companyInfo' },
-                { text: 'tel: +48 000 000 000', style: 'companyInfo' },
+                commonHeader,
+                {
+                  columns: [
+                    {
+                      width: '*',
+                      text: 'OFERTA INDYWIDUALNA',
+                      style: 'offerTitle',
+                      alignment: 'center',
+                    },
+                  ],
+                  margin: [0, 10, 0, 0],
+                },
+                {
+                  columns: [
+                    {
+                      width: '*',
+                      text: [
+                        { text: 'Data utworzenia: ', style: 'dateLabel' },
+                        {
+                          text: new Date().toLocaleDateString('pl-PL'),
+                          style: 'dateValue',
+                        },
+                        { text: '    Ważna do: ', style: 'dateLabel' },
+                        { text: getExpiryDate(), style: 'dateValue' },
+                      ],
+                      alignment: 'center',
+                    },
+                  ],
+                  margin: [0, 5, 0, 0],
+                },
+                {
+                  columns: [
+                    {
+                      width: '50%',
+                      stack: [
+                        { text: 'Dział sprzedaży:', style: 'contactHeader' },
+                        {
+                          text: 'Adam Runo | +48 508 000 813 | adam.runo@ddgro.eu',
+                          style: 'contactInfo',
+                        },
+                      ],
+                      margin: [40, 5, 0, 0],
+                    },
+                    {
+                      width: '50%',
+                      stack: [
+                        {
+                          text: 'Dział obsługi klienta:',
+                          style: 'contactHeader',
+                        },
+                        {
+                          text: 'Greta Sosnowska | +48 517 062 150 | greta.sosnowska@ddgro.eu',
+                          style: 'contactInfo',
+                        },
+                      ],
+                      margin: [0, 5, 40, 0],
+                    },
+                  ],
+                },
+                {
+                  text: 'Producent: DECK-DRY POLSKA Sp. z o.o., Wenus 73A, 80-299 Gdańsk POLSKA',
+                  style: 'producerInfo',
+                  alignment: 'center',
+                  margin: [0, 5, 0, 0],
+                },
               ],
-              alignment: 'right',
-              margin: [0, 20, 40, 0],
-            },
-          ],
+            };
+          }
+          return commonHeader;
         },
         footer: function (currentPage, pageCount) {
           return {
@@ -495,10 +575,6 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         },
         content: [
           { text: 'Zestawienie wsporników', style: 'mainHeader' },
-          {
-            text: `Data utworzenia: ${new Date().toLocaleDateString('pl-PL')}`,
-            style: 'dateText',
-          },
           {
             table: {
               headerRows: 1,
@@ -586,70 +662,66 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
               },
             ],
           },
+          // {
+          //   text: [
+          //     '\nUwaga: ',
+          //     {
+          //       text: 'Przedstawiona oferta ma charakter informacyjny i nie stanowi oferty handlowej w rozumieniu Art.66 § 1 Kodeksu Cywilnego.',
+          //       italics: true,
+          //     },
+          //   ],
+          //   style: 'disclaimer',
+          //   margin: [0, 20, 0, 20],
+          // },
+          { text: '', pageBreak: 'before' },
           {
-            text: [
-              '\nUwaga: ',
+            stack: [
               {
-                text: 'Przedstawiona oferta ma charakter informacyjny i nie stanowi oferty handlowej w rozumieniu Art.66 § 1 Kodeksu Cywilnego.',
-                italics: true,
+                text: 'KATALOG DD GROUP',
+                style: 'qrTitle',
+                alignment: 'center',
+                margin: [0, 60, 0, 10],
+              },
+              {
+                text: 'ddgro.eu/katalog-pl',
+                style: 'qrLink',
+                alignment: 'center',
+                margin: [0, 0, 0, 40],
+              },
+              {
+                image: path.join(__dirname, '../../public/images/qr-code.png'),
+                width: 240,
+                alignment: 'center',
+                margin: [0, 0, 0, 0],
               },
             ],
-            style: 'disclaimer',
-            margin: [0, 20, 0, 20],
+          },
+          { text: '', pageBreak: 'before' },
+          {
+            image: path.join(__dirname, '../../public/images/footer-image.png'),
+            width: 400,
+            alignment: 'center',
+            margin: [0, 20, 0, 40],
           },
           {
-            columns: [
-              {
-                width: '33%',
-                stack: [
-                  {
-                    text: 'Dlaczego warto zamówić u nas?',
-                    style: 'footerHeader',
-                    margin: [0, 0, 0, 10],
-                  },
-                  {
-                    ul: [
-                      'Oferowane produkty są produkowane w Polsce.',
-                      'Dostarczamy 1-2 dni na terenie PL.',
-                      'Pomożemy Ci obliczyć zapotrzebownie na ilość wsporników i ich wysokość.',
-                      'Nasze produkty posiadają Krajową Ocenę Techniczną ITB.',
-                      'Zamawiasz dokładnie tyle sztuk ile potrzebujesz.',
-                      'Masz możliwość zwrócenia niewykorzystanych ilości.',
-                    ],
-                    style: 'footerList',
-                    margin: [0, 0, 20, 0],
-                  },
-                ],
-              },
-              {
-                width: '33%',
-                stack: [
-                  {
-                    image: path.join(
-                      __dirname,
-                      '../../public/images/qr-code.png',
-                    ),
-                    width: 150,
-                    alignment: 'center',
-                    margin: [0, 0, 0, 0],
-                  },
-                ],
-              },
-              {
-                width: '33%',
-                stack: [
-                  {
-                    image: path.join(
-                      __dirname,
-                      '../../public/images/footer-image.png',
-                    ),
-                    width: 200,
-                    alignment: 'center',
-                    margin: [0, 0, 0, 0],
-                  },
-                ],
-              },
+            text: 'Dlaczego warto zamówić u nas?',
+            style: 'footerHeader',
+            alignment: 'center',
+            margin: [0, 0, 0, 20],
+          },
+          {
+            ul: [
+              'Oferowane produkty są produkowane w Polsce.',
+              'Dostarczamy 1-2 dni na terenie PL.',
+              'Pomożemy Ci obliczyć zapotrzebownie na ilość wsporników i ich wysokość.',
+              'Nasze produkty posiadają Krajową Ocenę Techniczną ITB.',
+              'Zamawiasz dokładnie tyle sztuk ile potrzebujesz.',
+              'Masz możliwość zwrócenia niewykorzystanych ilości.',
             ],
+            style: 'footerList',
+            alignment: 'center',
+            margin: [100, 0, 100, 0],
+            type: 'none',
           },
         ],
         styles: {
@@ -704,6 +776,42 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
             fontSize: 10,
             color: '#333333',
           },
+          offerTitle: {
+            fontSize: 16,
+            bold: true,
+            color: '#000000',
+          },
+          dateLabel: {
+            fontSize: 10,
+            color: '#666666',
+          },
+          dateValue: {
+            fontSize: 10,
+            bold: true,
+            color: '#000000',
+          },
+          contactHeader: {
+            fontSize: 10,
+            bold: true,
+            color: '#666666',
+          },
+          contactInfo: {
+            fontSize: 9,
+            color: '#000000',
+          },
+          producerInfo: {
+            fontSize: 8,
+            color: '#666666',
+          },
+          qrTitle: {
+            fontSize: 16,
+            bold: true,
+            color: '#000000',
+          },
+          qrLink: {
+            fontSize: 12,
+            color: '#000000',
+          },
         },
         defaultStyle: {
           font: 'Roboto',
@@ -724,79 +832,6 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         });
       });
     };
-    //   const docDefinition = {
-    //     pageOrientation: 'landscape', // Set the orientation to landscape
-    //     content: [
-    //       { text: 'Twoje zamówienie', style: 'header' },
-    //       { text: 'Zestawienie wsporników', style: 'subheader' },
-    //       {
-    //         style: 'tableExample',
-    //         table: {
-    //           headerRows: 1,
-    //           body: [
-    //             [
-    //               { text: 'Nazwa Skrócona', style: 'tableHeader' },
-    //               { text: 'Nazwa', style: 'tableHeader' },
-    //               { text: 'Wysokość [mm]', style: 'tableHeader' },
-    //               { text: 'Ilość', style: 'tableHeader' },
-    //               { text: 'Cena katalogowa netto', style: 'tableHeader' },
-    //               { text: 'Łącznie netto', style: 'tableHeader' },
-    //             ],
-    //             ...items.map((item) => [
-    //               item.short_name || 'N/A',
-    //               item.name || 'N/A',
-    //               item.height_mm || '--',
-    //               item.count || 0,
-    //               item.price_net || 0,
-    //               item.total_price || 0,
-    //             ]),
-    //           ],
-    //         },
-    //       },
-    //       {
-    //         text: `Łącznie netto: ${total}`,
-    //         alignment: 'right',
-    //         margin: [0, 20, 0, 0],
-    //       },
-    //     ],
-    //     styles: {
-    //       header: {
-    //         fontSize: 14,
-    //         bold: true,
-    //       },
-    //       subheader: {
-    //         fontSize: 10,
-    //         bold: true,
-    //         margin: [0, 10, 0, 5],
-    //       },
-    //       tableHeader: {
-    //         bold: true,
-    //         fontSize: 9,
-    //         color: 'black',
-    //       },
-    //       tableExample: {
-    //         width: '100%',
-    //         fontSize: 7,
-    //         margin: [0, 5, 0, 15],
-    //       },
-    //     },
-    //   };
-
-    //   // Create PDF document
-    //   const pdfDoc = printer.createPdfKitDocument(docDefinition);
-    //   const filePath = path.join(__dirname, 'zestawienie.pdf');
-    //   pdfDoc.pipe(fs.createWriteStream(filePath));
-    //   pdfDoc.end();
-
-    //   return new Promise((resolve, reject) => {
-    //     pdfDoc.on('end', () => {
-    //       resolve(filePath);
-    //     });
-    //     pdfDoc.on('error', (err) => {
-    //       reject(err);
-    //     });
-    //   });
-    // };
 
     const pdfFilePath = await createPDF(items, total);
 
