@@ -458,17 +458,15 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       const docDefinition = {
         pageSize: 'A4',
         pageOrientation: 'landscape',
-        pageMargins: [40, 60, 40, 60],
+        pageMargins: [40, 60, 40, 80],
         header: {
           columns: [
             {
-              // Company logo
               image: path.join(__dirname, '../../public/images/logo.png'),
               width: 150,
               margin: [40, 20, 0, 0],
             },
             {
-              // Company info
               stack: [
                 { text: 'DDGRO Sp. z o.o.', style: 'companyName' },
                 { text: 'ul. Przykładowa 123', style: 'companyInfo' },
@@ -482,23 +480,82 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           ],
         },
         footer: function (currentPage, pageCount) {
-          return {
+          const commonFooter = {
             columns: [
-              {
-                text: 'www.ddgro.com',
-                alignment: 'left',
-                margin: [40, 0, 0, 0],
-              },
+              { text: 'www.ddgro.com', alignment: 'left' },
               {
                 text: `Strona ${currentPage} z ${pageCount}`,
                 alignment: 'right',
-                margin: [0, 0, 40, 0],
               },
             ],
-            margin: [40, 20],
+            margin: [40, 0, 40, 40],
             fontSize: 8,
             color: '#666666',
           };
+
+          if (currentPage === pageCount) {
+            return {
+              stack: [
+                commonFooter,
+                {
+                  columns: [
+                    {
+                      width: '33%',
+                      stack: [
+                        {
+                          text: 'Dlaczego warto zamówić u nas?',
+                          style: 'footerHeader',
+                          margin: [0, 0, 0, 10],
+                        },
+                        {
+                          ul: [
+                            'Oferowane produkty są produkowane w Polsce.',
+                            'Dostarczamy 1-2 dni na terenie PL.',
+                            'Pomożemy Ci obliczyć zapotrzebownie na ilość wsporników i ich wysokość.',
+                            'Nasze produkty posiadają Krajową Ocenę Techniczną ITB.',
+                            'Zamawiasz dokładnie tyle sztuk ile potrzebujesz.',
+                            'Masz możliwość zwrócenia niewykorzystanych ilości.',
+                          ],
+                          style: 'footerList',
+                          margin: [0, 0, 20, 0],
+                        },
+                      ],
+                    },
+                    {
+                      width: '33%',
+                      stack: [
+                        {
+                          image: path.join(
+                            __dirname,
+                            '../../public/images/qr-code.png',
+                          ),
+                          width: 150,
+                          alignment: 'center',
+                          margin: [0, 20, 0, 0],
+                        },
+                      ],
+                    },
+                    {
+                      width: '33%',
+                      stack: [
+                        {
+                          image: path.join(
+                            __dirname,
+                            '../../public/images/footer-image.png',
+                          ),
+                          width: 200,
+                          alignment: 'center',
+                          margin: [0, 20, 0, 0],
+                        },
+                      ],
+                    },
+                  ],
+                  margin: [40, 0, 40, 20],
+                },
+              ],
+            };
+          }
+          return commonFooter;
         },
         content: [
           { text: 'Zestawienie wsporników', style: 'mainHeader' },
@@ -519,7 +576,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                   { text: 'Cena katalogowa\nnetto', style: 'tableHeader' },
                   { text: 'Łącznie netto', style: 'tableHeader' },
                 ],
-                ...items.map((item, i) => [
+                ...items.map((item) => [
                   { text: item.short_name || 'N/A', style: 'tableCell' },
                   { text: item.name || 'N/A', style: 'tableCell' },
                   { text: item.height_mm || '--', style: 'tableCell' },
@@ -547,17 +604,19 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
             },
             layout: {
               hLineWidth: function (i, node) {
-                return i === 0 || i === 1 || i === node.table.body.length
-                  ? 2
-                  : 1;
+                return 1;
               },
               vLineWidth: function (i) {
-                return 0; // No vertical lines
+                return 1;
               },
               hLineColor: function (i, node) {
-                return i === 0 || i === 1 || i === node.table.body.length
-                  ? '#2F528F'
-                  : '#CCCCCC';
+                return '#CCCCCC';
+              },
+              vLineColor: function (i) {
+                return '#CCCCCC';
+              },
+              fillColor: function (rowIndex, node, columnIndex) {
+                return rowIndex % 2 === 0 && rowIndex !== 0 ? '#F9F9F9' : null;
               },
               paddingLeft: function (i) {
                 return 8;
@@ -607,13 +666,11 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           mainHeader: {
             fontSize: 24,
             bold: true,
-            color: '#2F528F',
             margin: [0, 20, 0, 10],
           },
           companyName: {
             fontSize: 14,
             bold: true,
-            color: '#2F528F',
           },
           companyInfo: {
             fontSize: 8,
@@ -627,7 +684,6 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           tableHeader: {
             fontSize: 10,
             bold: true,
-            color: '#2F528F',
             fillColor: '#F2F2F2',
             alignment: 'left',
           },
@@ -638,19 +694,25 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           totalLabel: {
             fontSize: 12,
             bold: true,
-            color: '#2F528F',
             alignment: 'right',
             margin: [0, 0, 10, 0],
           },
           totalAmount: {
             fontSize: 12,
             bold: true,
-            color: '#2F528F',
             alignment: 'right',
           },
           disclaimer: {
             fontSize: 8,
             color: '#666666',
+          },
+          footerHeader: {
+            fontSize: 12,
+            bold: true,
+          },
+          footerList: {
+            fontSize: 10,
+            color: '#333333',
           },
         },
         defaultStyle: {
