@@ -456,64 +456,208 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
 
     const createPDF = async (items, total) => {
       const docDefinition = {
-        pageOrientation: 'landscape', // Set the orientation to landscape
+        pageSize: 'A4',
+        pageOrientation: 'landscape',
+        pageMargins: [40, 60, 40, 60],
+        header: {
+          columns: [
+            {
+              // Company logo
+              image: path.join(__dirname, '../../public/images/logo.png'),
+              width: 150,
+              margin: [40, 20, 0, 0],
+            },
+            {
+              // Company info
+              stack: [
+                { text: 'DDGRO Sp. z o.o.', style: 'companyName' },
+                { text: 'ul. Przykładowa 123', style: 'companyInfo' },
+                { text: '00-000 Warszawa', style: 'companyInfo' },
+                { text: 'NIP: 000-000-00-00', style: 'companyInfo' },
+                { text: 'tel: +48 000 000 000', style: 'companyInfo' },
+              ],
+              alignment: 'right',
+              margin: [0, 20, 40, 0],
+            },
+          ],
+        },
+        footer: function (currentPage, pageCount) {
+          return {
+            columns: [
+              {
+                text: 'www.ddgro.com',
+                alignment: 'left',
+                margin: [40, 0, 0, 0],
+              },
+              {
+                text: `Strona ${currentPage} z ${pageCount}`,
+                alignment: 'right',
+                margin: [0, 0, 40, 0],
+              },
+            ],
+            margin: [40, 20],
+            fontSize: 8,
+            color: '#666666',
+          };
+        },
         content: [
-          { text: 'Twoje zamówienie', style: 'header' },
-          { text: 'Zestawienie wsporników', style: 'subheader' },
+          { text: 'Zestawienie wsporników', style: 'mainHeader' },
           {
-            style: 'tableExample',
+            text: `Data utworzenia: ${new Date().toLocaleDateString('pl-PL')}`,
+            style: 'dateText',
+          },
+          {
             table: {
               headerRows: 1,
+              widths: ['15%', '25%', '15%', '15%', '15%', '15%'],
               body: [
                 [
                   { text: 'Nazwa Skrócona', style: 'tableHeader' },
                   { text: 'Nazwa', style: 'tableHeader' },
                   { text: 'Wysokość [mm]', style: 'tableHeader' },
                   { text: 'Ilość', style: 'tableHeader' },
-                  { text: 'Cena katalogowa netto', style: 'tableHeader' },
+                  { text: 'Cena katalogowa\nnetto', style: 'tableHeader' },
                   { text: 'Łącznie netto', style: 'tableHeader' },
                 ],
-                ...items.map((item) => [
-                  item.short_name || 'N/A',
-                  item.name || 'N/A',
-                  item.height_mm || '--',
-                  item.count || 0,
-                  item.price_net || 0,
-                  item.total_price || 0,
+                ...items.map((item, i) => [
+                  { text: item.short_name || 'N/A', style: 'tableCell' },
+                  { text: item.name || 'N/A', style: 'tableCell' },
+                  { text: item.height_mm || '--', style: 'tableCell' },
+                  {
+                    text: item.count || 0,
+                    style: 'tableCell',
+                    alignment: 'right',
+                  },
+                  {
+                    text: new Intl.NumberFormat('pl-PL', {
+                      minimumFractionDigits: 2,
+                    }).format(item.price_net || 0),
+                    style: 'tableCell',
+                    alignment: 'right',
+                  },
+                  {
+                    text: new Intl.NumberFormat('pl-PL', {
+                      minimumFractionDigits: 2,
+                    }).format(item.total_price || 0),
+                    style: 'tableCell',
+                    alignment: 'right',
+                  },
                 ]),
               ],
             },
+            layout: {
+              hLineWidth: function (i, node) {
+                return i === 0 || i === 1 || i === node.table.body.length
+                  ? 2
+                  : 1;
+              },
+              vLineWidth: function (i) {
+                return 0; // No vertical lines
+              },
+              hLineColor: function (i, node) {
+                return i === 0 || i === 1 || i === node.table.body.length
+                  ? '#2F528F'
+                  : '#CCCCCC';
+              },
+              paddingLeft: function (i) {
+                return 8;
+              },
+              paddingRight: function (i) {
+                return 8;
+              },
+              paddingTop: function (i) {
+                return 8;
+              },
+              paddingBottom: function (i) {
+                return 8;
+              },
+            },
           },
           {
-            text: `Łącznie netto: ${total}`,
-            alignment: 'right',
+            columns: [
+              { width: '*', text: '' },
+              {
+                width: 'auto',
+                table: {
+                  body: [
+                    [
+                      { text: 'Suma netto:', style: 'totalLabel' },
+                      { text: total + ' PLN', style: 'totalAmount' },
+                    ],
+                  ],
+                },
+                layout: 'noBorders',
+                margin: [0, 20, 0, 0],
+              },
+            ],
+          },
+          {
+            text: [
+              '\nUwaga: ',
+              {
+                text: 'Przedstawiona oferta ma charakter informacyjny i nie stanowi oferty handlowej w rozumieniu Art.66 § 1 Kodeksu Cywilnego.',
+                italics: true,
+              },
+            ],
+            style: 'disclaimer',
             margin: [0, 20, 0, 0],
           },
         ],
         styles: {
-          header: {
+          mainHeader: {
+            fontSize: 24,
+            bold: true,
+            color: '#2F528F',
+            margin: [0, 20, 0, 10],
+          },
+          companyName: {
             fontSize: 14,
             bold: true,
+            color: '#2F528F',
           },
-          subheader: {
+          companyInfo: {
+            fontSize: 8,
+            color: '#666666',
+          },
+          dateText: {
             fontSize: 10,
-            bold: true,
-            margin: [0, 10, 0, 5],
+            color: '#666666',
+            margin: [0, 0, 0, 20],
           },
           tableHeader: {
+            fontSize: 10,
             bold: true,
+            color: '#2F528F',
+            fillColor: '#F2F2F2',
+            alignment: 'left',
+          },
+          tableCell: {
             fontSize: 9,
-            color: 'black',
+            color: '#333333',
           },
-          tableExample: {
-            width: '100%',
-            fontSize: 7,
-            margin: [0, 5, 0, 15],
+          totalLabel: {
+            fontSize: 12,
+            bold: true,
+            color: '#2F528F',
+            alignment: 'right',
+            margin: [0, 0, 10, 0],
           },
+          totalAmount: {
+            fontSize: 12,
+            bold: true,
+            color: '#2F528F',
+            alignment: 'right',
+          },
+          disclaimer: {
+            fontSize: 8,
+            color: '#666666',
+          },
+        },
+        defaultStyle: {
+          font: 'Roboto',
         },
       };
 
-      // Create PDF document
       const pdfDoc = printer.createPdfKitDocument(docDefinition);
       const filePath = path.join(__dirname, 'zestawienie.pdf');
       pdfDoc.pipe(fs.createWriteStream(filePath));
@@ -528,6 +672,81 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         });
       });
     };
+
+    // const createPDF = async (items, total) => {
+    //   const docDefinition = {
+    //     pageOrientation: 'landscape', // Set the orientation to landscape
+    //     content: [
+    //       { text: 'Twoje zamówienie', style: 'header' },
+    //       { text: 'Zestawienie wsporników', style: 'subheader' },
+    //       {
+    //         style: 'tableExample',
+    //         table: {
+    //           headerRows: 1,
+    //           body: [
+    //             [
+    //               { text: 'Nazwa Skrócona', style: 'tableHeader' },
+    //               { text: 'Nazwa', style: 'tableHeader' },
+    //               { text: 'Wysokość [mm]', style: 'tableHeader' },
+    //               { text: 'Ilość', style: 'tableHeader' },
+    //               { text: 'Cena katalogowa netto', style: 'tableHeader' },
+    //               { text: 'Łącznie netto', style: 'tableHeader' },
+    //             ],
+    //             ...items.map((item) => [
+    //               item.short_name || 'N/A',
+    //               item.name || 'N/A',
+    //               item.height_mm || '--',
+    //               item.count || 0,
+    //               item.price_net || 0,
+    //               item.total_price || 0,
+    //             ]),
+    //           ],
+    //         },
+    //       },
+    //       {
+    //         text: `Łącznie netto: ${total}`,
+    //         alignment: 'right',
+    //         margin: [0, 20, 0, 0],
+    //       },
+    //     ],
+    //     styles: {
+    //       header: {
+    //         fontSize: 14,
+    //         bold: true,
+    //       },
+    //       subheader: {
+    //         fontSize: 10,
+    //         bold: true,
+    //         margin: [0, 10, 0, 5],
+    //       },
+    //       tableHeader: {
+    //         bold: true,
+    //         fontSize: 9,
+    //         color: 'black',
+    //       },
+    //       tableExample: {
+    //         width: '100%',
+    //         fontSize: 7,
+    //         margin: [0, 5, 0, 15],
+    //       },
+    //     },
+    //   };
+
+    //   // Create PDF document
+    //   const pdfDoc = printer.createPdfKitDocument(docDefinition);
+    //   const filePath = path.join(__dirname, 'zestawienie.pdf');
+    //   pdfDoc.pipe(fs.createWriteStream(filePath));
+    //   pdfDoc.end();
+
+    //   return new Promise((resolve, reject) => {
+    //     pdfDoc.on('end', () => {
+    //       resolve(filePath);
+    //     });
+    //     pdfDoc.on('error', (err) => {
+    //       reject(err);
+    //     });
+    //   });
+    // };
 
     const pdfFilePath = await createPDF(items, total);
 
