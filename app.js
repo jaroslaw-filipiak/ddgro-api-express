@@ -19,16 +19,11 @@ var apiApplicationsRouter = require('./routes/api/application');
 //   'https://kalkulator.ddgro.eu',
 // ];
 
-var allowedOrigins = ['*'];
+const allowedOrigins = ['http://localhost:3000', 'https://kalkulator.ddgro.eu'];
 
 const corsOptions = {
-  origin: (origin, callback) => {
-    if (allowedOrigins.includes(origin) || !origin) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: allowedOrigins,
+  credentials: true,
 };
 
 mongoose.connect(process.env.MONGODB_URI);
