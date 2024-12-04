@@ -12,11 +12,14 @@ var apiAccesoriesRouter = require('./routes/api/accesories');
 var apiAProductsRouter = require('./routes/api/products');
 var apiApplicationsRouter = require('./routes/api/application');
 
-var allowedOrigins = [
-  'http://localhost:3000',
-  'https://octopus-app-jmbhj.ondigitalocean.app',
-  'https://kalkulator.ddgro.eu',
-];
+// var allowedOrigins = [
+//   'http://localhost:3000',
+//   'https://octopus-app-jmbhj.ondigitalocean.app',
+//   'https://kalkulator.ddgro.eu',
+//   'https://kalkulator.ddgro.eu',
+// ];
+
+var allowedOrigins = ['*'];
 
 const corsOptions = {
   origin: (origin, callback) => {
