@@ -1,39 +1,64 @@
-const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
 const fs = require('fs');
 const path = require('path');
-const hbs = require('nodemailer-express-handlebars');
+const handlebars = require('handlebars');
 
-const emailTransporter = nodemailer.createTransport({
-  host: process.env.MAIL_HOST,
-  port: process.env.MAIL_PORT,
-  secure: true,
-  auth: {
-    user: process.env.MAIL_USERNAME,
-    pass: process.env.MAIL_PASSWORD,
-  },
-  debug: true, // Add this line
-  logger: true, // And this line
-});
-
-// Configure template engine and specify the path to templates
-const handlebarOptions = {
-  viewEngine: {
-    extName: '.handlebars',
-    partialsDir: path.resolve('./views/emails'),
-    defaultLayout: false,
-  },
-  viewPath: path.resolve('./views/emails'),
-  extName: '.handlebars',
-};
-
-emailTransporter.use('compile', hbs(handlebarOptions));
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 async function sendEmail(emailOptions) {
   try {
-    await emailTransporter.sendMail(emailOptions);
-    console.log('Email sent successfully');
+    // Set up handlebars template engine
+    const templatePath = path.resolve('./views/emails');
+    const templateContent = fs.readFileSync(
+      path.join(templatePath, emailOptions.template + '.handlebars'),
+      'utf8',
+    );
+
+    // Compile template with handlebars
+    const template = handlebars.compile(templateContent);
+    const htmlContent = template(emailOptions.context);
+
+    // Prepare attachments
+    const attachments = [];
+    if (emailOptions.attachments && emailOptions.attachments.length > 0) {
+      for (const attachment of emailOptions.attachments) {
+        // Read file as Buffer instead of converting to base64 string
+        const content = await fs.promises.readFile(attachment.path);
+        attachments.push({
+          content: content.toString('base64'),
+          filename: attachment.filename,
+          type: attachment.contentType,
+          disposition: 'attachment',
+        });
+      }
+    }
+
+    const msg = {
+      to: emailOptions.to,
+      from: emailOptions.from,
+      subject: emailOptions.subject,
+      html: htmlContent,
+      attachments: attachments,
+    };
+
+    // Send email using SendGrid
+    await sgMail.send(msg);
+    console.log('Email sent successfully via SendGrid');
+
+    // Clean up any temporary files if they exist
+    if (emailOptions.attachments) {
+      for (const attachment of emailOptions.attachments) {
+        if (attachment.path && fs.existsSync(attachment.path)) {
+          await fs.promises.unlink(attachment.path);
+        }
+      }
+    }
   } catch (error) {
-    console.error('Failed to send email', error);
+    console.error('Failed to send email via SendGrid:', error);
+    if (error.response) {
+      console.error('SendGrid error details:', error.response.body);
+    }
+    throw error;
   }
 }
 
