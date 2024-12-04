@@ -844,7 +844,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     }
 
     const emailOptions = {
-      from: `contact@ddgro.eu`,
+      from: `DDGRO.EU <contact@ddgro.eu>`,
       to: to,
       subject: 'Twoje zestawienie wsporników DDGRO',
       template: 'order',
