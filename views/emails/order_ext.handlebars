@@ -1,0 +1,180 @@
+<html
+  xmlns='http://www.w3.org/1999/xhtml'
+  xmlns:v='urn:schemas-microsoft-com:vml'
+  xmlns:o='urn:schemas-microsoft-com:office:office'
+>
+  <head>
+    <meta http-equiv='Content-Type' content='text/html; charset=UTF-8' />
+    <meta name='viewport' content='width=device-width, initial-scale=1.0' />
+    <meta name='x-apple-disable-message-reformatting' />
+    <meta http-equiv='X-UA-Compatible' content='IE=edge' />
+    <title>DDGRO informacja o zamówieniu</title>
+
+    <style type='text/css'>
+      /* Base styles */ :root { --primary-font: 'Helvetica', Arial, sans-serif;
+      --text-color: #000000; --link-color: #0000EE; --border-color: #ddd;
+      --background-color: #f2f4f6; --table-header-bg: #eee; } body { margin: 0;
+      padding: 10px 0; background-color: var(--background-color); color:
+      var(--text-color); -webkit-text-size-adjust: 100%; text-align: center; }
+      /* Typography */ h1, h2, p { font-family: var(--primary-font); margin: 0;
+      padding: 0; } h1 { font-size: 20px; line-height: 24px; font-weight: 600;
+      margin-bottom: 20px; } h2 { font-size: 18px; color: #333; margin-bottom:
+      10px; } p { font-size: 15px; line-height: 24px; font-weight: 300; } /*
+      Links */ a { color: var(--link-color); text-decoration: none !important; }
+      .link { text-decoration: underline !important; } /* Layout */ .container {
+      width: 600px; max-width: 600px; margin: 0 auto; background-color: #ffffff;
+      padding: 30px; } .section { margin: 20px 0; } /* Tables */ .data-table {
+      width: 100%; border-collapse: collapse; margin-top: 10px; } .data-table td
+      { padding: 8px; border: 1px solid var(--border-color); } .data-table
+      td:first-child { font-weight: bold; } /* Compatibility */ .ExternalClass
+      p, .ExternalClass span, .ExternalClass font, .ExternalClass td {
+      line-height: 100%; } .ExternalClass { width: 100%; }
+    </style>
+  </head>
+
+  <body>
+    <div class='container'>
+      <h1>Szczegóły nowego zamówienia</h1>
+
+      <div class='section'>
+        <p>
+          <strong>ID zamówienia:</strong>
+          {{applicationId}}<br />
+          <strong>Email klienta:</strong>
+          {{clientEmail}}<br />
+          <strong>Data utworzenia:</strong>
+          {{formData.createdAt}}<br />
+          <strong>Imię i nazwisko:</strong>
+          {{formData.nameSurname}}<br />
+          <strong>Telefon:</strong>
+          {{formData.phone}}<br />
+          <strong>Profesja:</strong>
+          {{formData.proffesion}}<br />
+        </p>
+      </div>
+
+      <div class='section'>
+        <h2>Dane formularza</h2>
+        <table class='data-table'>
+          <tr>
+            <td>Typ</td>
+            <td>{{getTypeName formData.type}}</td>
+          </tr>
+          <tr>
+            <td>Powierzchnia całkowita</td>
+            <td>{{formData.totalArea}} m²</td>
+          </tr>
+          <tr>
+            <td>Wysokości wsporników min-max</td>
+            <td>{{formData.lowest}} - {{formData.highest}} mm</td>
+          </tr>
+          <tr>
+            <td>Ilość tarasów</td>
+            <td>{{formData.count}}</td>
+          </tr>
+          <tr>
+            <td>Rodzaj podparcia</td>
+            <td>{{getSupportTypeDescription formData.supportType}}</td>
+          </tr>
+          <tr>
+            <td>System główny</td>
+            <td>{{formData.mainSystem}}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div class='section'>
+        <h2>Szczegóły techniczne</h2>
+        <table class='data-table'>
+          <tr>
+            <td>Odstęp między płytami</td>
+            <td>{{formData.gapBetweenSlabs}} mm</td>
+          </tr>
+
+          {{#unless (eq formData.type 'slab')}}
+            <tr>
+              <td>Grubość tarasu</td>
+              <td>{{formData.terraceThickness}} mm</td>
+            </tr>
+            <tr>
+              <td>Odstęp między podporami</td>
+              <td>{{formData.distanceBetweenSupports}} mm</td>
+            </tr>
+            <tr>
+              <td>Wysokość legara</td>
+              <td>{{formData.joistHeight}} mm</td>
+            </tr>
+          {{/unless}}
+
+          <tr>
+            <td>Wymiary płyty (szer. x wys)</td>
+            <td>{{formData.slabWidth}} x {{formData.slabHeight}}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div class='section'>
+        <h2>Podsumowanie ilości</h2>
+        <table class='data-table'>
+          <tr>
+            <td>Liczba płyt</td>
+            <td>{{formData.slabsCount}}</td>
+          </tr>
+          <tr>
+            <td>Liczba wsporników</td>
+            <td>{{formData.supportsCount}}</td>
+          </tr>
+          <tr>
+            <td>Suma netto</td>
+            <td>{{total}} PLN</td>
+          </tr>
+        </table>
+      </div>
+
+      {{#if formData.additionalAccessories.length}}
+        <div class='section'>
+          <h2>Akcesoria dodatkowe</h2>
+          <table class='data-table'>
+            <tr>
+              <td
+                style='padding: 8px; border: 1px solid #ddd; background-color: #f5f5f5;'
+              ><strong>Nazwa</strong></td>
+              <td
+                style='padding: 8px; border: 1px solid #ddd; background-color: #f5f5f5;'
+              ><strong>Numer katalogowy</strong></td>
+              <td
+                style='padding: 8px; border: 1px solid #ddd; background-color: #f5f5f5;'
+              ><strong>Ilość</strong></td>
+              <td
+                style='padding: 8px; border: 1px solid #ddd; background-color: #f5f5f5;'
+              ><strong>Cena netto</strong></td>
+              <td
+                style='padding: 8px; border: 1px solid #ddd; background-color: #f5f5f5;'
+              ><strong>Suma</strong></td>
+            </tr>
+            {{#each formData.additionalAccessories}}
+              <tr>
+                <td
+                  style='padding: 8px; border: 1px solid #ddd;'
+                >{{this.name}}</td>
+                <td
+                  style='padding: 8px; border: 1px solid #ddd;'
+                >{{this.short_name}}</td>
+                <td
+                  style='padding: 8px; border: 1px solid #ddd;'
+                >{{this.count}}</td>
+                <td
+                  style='padding: 8px; border: 1px solid #ddd;'
+                >{{this.price_net}} PLN</td>
+                <td
+                  style='padding: 8px; border: 1px solid #ddd;'
+                >{{this.total_price}} PLN</td>
+              </tr>
+            {{/each}}
+          </table>
+        </div>
+      {{/if}}
+
+    </div>
+  </body>
+</html>

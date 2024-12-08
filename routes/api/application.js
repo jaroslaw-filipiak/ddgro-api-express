@@ -861,7 +861,58 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       ],
     };
 
+    const toOwnerOptions = {
+      from: `DDGRO.EU <contact@ddgro.eu>`,
+      to: 'info@j-filipiak.pl',
+      subject: 'Informacja o nowym zamówieniu',
+      template: 'order_ext',
+      context: {
+        // Original data
+        items,
+        total,
+        // Additional application data
+        applicationId: application._id,
+        clientEmail: application.email,
+        formData: {
+          type: application.type,
+          totalArea: application.total_area,
+          count: application.count,
+          gapBetweenSlabs: application.gap_between_slabs,
+          lowest: application.lowest,
+          highest: application.highest,
+          terraceThickness: application.terrace_thickness,
+          distanceBetweenSupports: application.distance_between_supports,
+          joistHeight: application.joist_height,
+          slabWidth: application.slab_width,
+          slabHeight: application.slab_height,
+          slabThickness: application.slab_thickness,
+          tilesPerRow: application.tiles_per_row,
+          sumOfTiles: application.sum_of_tiles,
+          supportType: application.support_type,
+          mainSystem: application.main_system,
+          nameSurname: application.name_surname,
+          phone: application.phone,
+          proffesion: application.proffesion,
+          slabsCount: application.slabs_count,
+          supportsCount: application.supports_count,
+          createdAt: application.created_at,
+          // Include arrays if they exist
+          products: application.products || [],
+          accessories: application.accessories || [],
+          additionalAccessories: application.additional_accessories || [],
+        },
+      },
+      attachments: [
+        {
+          filename: 'podsumowanie_wspornikow.pdf',
+          path: pdfFilePath,
+          contentType: 'application/pdf',
+        },
+      ],
+    };
+
     await sendEmail(emailOptions);
+    await sendEmail(toOwnerOptions);
     // Clean up the file after sending the email
     fs.unlink(pdfFilePath, (err) => {
       if (err) console.error('Failed to delete temporary PDF file:', err);

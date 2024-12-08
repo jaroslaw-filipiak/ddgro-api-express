@@ -3,6 +3,29 @@ const fs = require('fs');
 const path = require('path');
 const handlebars = require('handlebars');
 
+handlebars.registerHelper('eq', function (a, b) {
+  return a === b;
+});
+
+handlebars.registerHelper('getTypeName', function (type) {
+  return type === 'slab' ? 'Płyty' : 'Deski';
+});
+
+handlebars.registerHelper('getSupportTypeDescription', function (supportType) {
+  switch (supportType) {
+    case 'type1':
+      return 'Podparcie po bokach';
+    case 'type2':
+      return 'Podparcie po bokach + wspornik na środku';
+    case 'type3':
+      return 'Podparcie po bokach, układ przestawny';
+    case 'type4':
+      return 'Podparcie po bokach, układ przestawny + wspornik na środku';
+    default:
+      return supportType || 'Nie określono';
+  }
+});
+
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 async function sendEmail(emailOptions) {
@@ -45,14 +68,16 @@ async function sendEmail(emailOptions) {
     await sgMail.send(msg);
     console.log('Email sent successfully via SendGrid');
 
-    // Clean up any temporary files if they exist
-    if (emailOptions.attachments) {
-      for (const attachment of emailOptions.attachments) {
-        if (attachment.path && fs.existsSync(attachment.path)) {
-          await fs.promises.unlink(attachment.path);
+    setTimeout(async () => {
+      if (emailOptions.attachments) {
+        for (const attachment of emailOptions.attachments) {
+          if (attachment.path && fs.existsSync(attachment.path)) {
+            await fs.promises.unlink(attachment.path);
+          }
         }
       }
-    }
+    }, 6000);
+    // Clean up any temporary files if they exist
   } catch (error) {
     console.error('Failed to send email via SendGrid:', error);
     if (error.response) {

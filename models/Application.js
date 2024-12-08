@@ -64,7 +64,7 @@ const ApplicationSchema = new mongoose.Schema({
   phone: {
     type: String,
   },
-  profession: {
+  proffesion: {
     type: String,
   },
   terms_accepted: {
