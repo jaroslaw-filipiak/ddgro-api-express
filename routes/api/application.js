@@ -863,7 +863,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
 
     const toOwnerOptions = {
       from: `DDGRO.EU <contact@ddgro.eu>`,
-      to: 'info@j-filipiak.pl',
+      to: 'jozef.baar@ddgro.eu',
       subject: 'Informacja o nowym zamówieniu',
       template: 'order_ext',
       context: {
