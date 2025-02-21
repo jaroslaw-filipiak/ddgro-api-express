@@ -77,7 +77,6 @@ async function sendEmail(emailOptions) {
         }
       }
     }, 6000);
-    // Clean up any temporary files if they exist
   } catch (error) {
     console.error('Failed to send email via SendGrid:', error);
     if (error.response) {
