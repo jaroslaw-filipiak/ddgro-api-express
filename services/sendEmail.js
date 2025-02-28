@@ -64,6 +64,22 @@ async function sendEmail(emailOptions) {
       attachments: attachments,
     };
 
+    if (process.env.NODE_ENV === 'development') {
+      res.json({
+        message: 'Email not send in DEVELOPMENT MODE',
+        data: {
+          to: emailOptions.to,
+          from: emailOptions.from,
+          subject: emailOptions.subject,
+          html: htmlContent,
+          attachments: attachments,
+        },
+      });
+      return;
+    }
+
+    console.log('Sending email via SendGrid...');
+
     // Send email using SendGrid
     await sgMail.send(msg);
     console.log('Email sent successfully via SendGrid');
