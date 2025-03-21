@@ -1,4 +1,8 @@
+/*
+ * Sendgrid dla produkcji oraz nodemailer z mailtrap.io dla developmentu
+ */
 const sgMail = require('@sendgrid/mail');
+const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
 const handlebars = require('handlebars');
@@ -48,7 +52,8 @@ async function sendEmail(emailOptions) {
         // Read file as Buffer instead of converting to base64 string
         const content = await fs.promises.readFile(attachment.path);
         attachments.push({
-          content: content.toString('base64'),
+          // content: content.toString('base64'),
+          content: content,
           filename: attachment.filename,
           type: attachment.contentType,
           disposition: 'attachment',
@@ -64,25 +69,40 @@ async function sendEmail(emailOptions) {
       attachments: attachments,
     };
 
+    /*
+     *  ======================
+     *  DEVELOPMENT
+     *  ======================
+     */
+
     if (process.env.NODE_ENV === 'development') {
-      res.json({
-        message: 'Email not send in DEVELOPMENT MODE',
-        data: {
-          to: emailOptions.to,
-          from: emailOptions.from,
-          subject: emailOptions.subject,
-          html: htmlContent,
-          attachments: attachments,
+      const transporter = nodemailer.createTransport({
+        host: process.env.MAILTRAP_HOST,
+        port: process.env.MAILTRAP_PORT,
+        auth: {
+          user: process.env.MAILTRAP_USERNAME,
+          pass: process.env.MAILTRAP_PASSWORD,
         },
       });
-      return;
+
+      const info = await transporter.sendMail({
+        to: emailOptions.to,
+        from: emailOptions.from,
+        subject: emailOptions.subject,
+        html: htmlContent,
+        attachments: attachments,
+      });
+
+      return { message: `Email sent successfully via Mailtrap`, info };
     }
 
-    console.log('Sending email via SendGrid...');
+    /*
+     *  ======================
+     *  PROD
+     *  ======================
+     */
 
-    // Send email using SendGrid
     await sgMail.send(msg);
-    console.log('Email sent successfully via SendGrid');
 
     setTimeout(async () => {
       if (emailOptions.attachments) {

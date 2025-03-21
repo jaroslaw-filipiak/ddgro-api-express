@@ -25,7 +25,7 @@ router.post('/', async function (req, res, next) {
     application.save();
 
     res.json(201, {
-      message: `Otzymaliśmy formularz... przygotowywanie do wysłania PDF`,
+      message: `Otrzymaliśmy formularz... przygotowywanie do wysłania PDF`,
       id: application._id,
     });
   } catch (e) {
@@ -235,12 +235,17 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
   try {
     const application = await Application.findById(id);
 
+    // console.log('1. application:', application);
+
     if (!application) {
       return res.status(404).json({ message: 'Nie znaleziono formularza!' });
     }
 
     const zbiorcza_TP = createZBIORCZA_TP(application);
     const main_keys = Object.keys(zbiorcza_TP.main_keys);
+
+    // console.log('2. zbiorcza_TP:', zbiorcza_TP);
+    // console.log('3. main_keys:', main_keys);
 
     const createPipeline = (series, values) => [
       {
@@ -319,6 +324,8 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     const filterProducts = (products, excludes) =>
       products.filter((product) => !excludes.includes(product.height_mm));
 
+    console.log('filterProducts:', filterProducts.length);
+
     const filteredSpiral = filterProducts(products_spiral, excludeFromSpiral);
     const filteredStandard = filterProducts(
       products_standard,
@@ -339,6 +346,8 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         ...filteredRaptor,
       ];
     }
+
+    console.log('orderArr:', orderArr.length);
 
     const filterOrder = (arr, lowest, highest) => {
       return arr.filter((product) => {
@@ -377,6 +386,8 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     items = addCountAndPriceToItems(items, 'max', zbiorcza_TP.main_keys);
     items = addCountAndPriceToItems(items, 'raptor', zbiorcza_TP.main_keys);
 
+    console.log('items:', items.length);
+
     // Add products from application.products with full info
     const additionalProducts = application.products || [];
     additionalProducts.forEach((additionalProduct) => {
@@ -409,7 +420,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
 
     const additionalAccessories = application.additional_accessories || [];
     additionalAccessories.forEach((additionalAccessory) => {
-      console.log('additionalAccessory:', additionalAccessory);
+      console.log('additionalAccessory:', additionalAccessory.length || 0);
       // Always add as a new item, don't try to find existing ones
       items.push({
         ...additionalAccessory,
@@ -843,10 +854,18 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       });
     }
 
+    console.log('email items + total');
+    console.log(items.length);
+    console.log(total);
+
     const emailOptions = {
       from: `DDGRO.EU <contact@ddgro.eu>`,
       to: to,
-      subject: 'Twoje zestawienie wsporników DDGRO',
+      subject: `${
+        process.env.NODE_ENV === 'development'
+          ? '[DEV] zestawienie wsporników DDGRO'
+          : 'Twoje zestawienie wsporników DDGRO'
+      }`,
       template: 'order',
       context: {
         items,
@@ -911,14 +930,25 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       ],
     };
 
-    await sendEmail(emailOptions);
-    await sendEmail(toOwnerOptions);
+    // development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Email sent in development');
+      await sendEmail(emailOptions);
+    } else {
+      // production
+      await sendEmail(emailOptions);
+      await sendEmail(toOwnerOptions);
+    }
+
     // Clean up the file after sending the email
     fs.unlink(pdfFilePath, (err) => {
       if (err) console.error('Failed to delete temporary PDF file:', err);
     });
 
-    res.status(200).json({ message: 'Oferta została wysłana!' });
+    res.status(200).json({
+      message: 'Oferta została wysłana!',
+      environment: process.env.NODE_ENV,
+    });
   } catch (e) {
     res.status(400).json({ message: e.message, error: e });
   }
