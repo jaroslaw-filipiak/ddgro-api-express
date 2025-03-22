@@ -16,6 +16,7 @@ const Products = require('../../models/Products');
 const Accessories = require('../../models/Accessories');
 
 const sendEmail = require('../../services/sendEmail');
+const translations = require('../../translations');
 
 router.post('/', async function (req, res, next) {
   const data = req.body;
@@ -25,8 +26,10 @@ router.post('/', async function (req, res, next) {
     application.save();
 
     res.json(201, {
-      message: `Otrzymaliśmy formularz... przygotowywanie do wysłania PDF`,
+      // Tlumaczenia tego komunikatu są robione po froncie
+      message: `Application created successfully`,
       id: application._id,
+      lang: application.lang,
     });
   } catch (e) {
     res.json(400, { message: e, error: e });
@@ -234,6 +237,8 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
 
   try {
     const application = await Application.findById(id);
+    const applicationLang = application.lang || 'pl';
+    const t = translations[applicationLang] || translations.pl;
 
     // console.log('1. application:', application);
 
@@ -469,7 +474,9 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       const getExpiryDate = () => {
         const date = new Date();
         date.setMonth(date.getMonth() + 1);
-        return date.toLocaleDateString('pl-PL');
+        return date.toLocaleDateString(
+          `${applicationLang}-${applicationLang.toUpperCase()}`,
+        );
       };
 
       const docDefinition = {
@@ -505,7 +512,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                   columns: [
                     {
                       width: '*',
-                      text: 'OFERTA INDYWIDUALNA',
+                      text: t.pdf.offerTitle,
                       style: 'offerTitle',
                       alignment: 'center',
                     },
@@ -516,13 +523,19 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                   columns: [
                     {
                       width: '*',
+
                       text: [
-                        { text: 'Data utworzenia: ', style: 'dateLabel' },
+                        { text: t.pdf.dateCreated + ' ', style: 'dateLabel' },
                         {
-                          text: new Date().toLocaleDateString('pl-PL'),
+                          text: new Date().toLocaleDateString(
+                            `${applicationLang}-${applicationLang.toUpperCase()}`,
+                          ),
                           style: 'dateValue',
                         },
-                        { text: '    Ważna do: ', style: 'dateLabel' },
+                        {
+                          text: '    ' + t.pdf.validUntil + ' ',
+                          style: 'dateLabel',
+                        },
                         { text: getExpiryDate(), style: 'dateValue' },
                       ],
                       alignment: 'center',
@@ -535,7 +548,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                     {
                       width: '50%',
                       stack: [
-                        { text: 'Dział sprzedaży:', style: 'contactHeader' },
+                        { text: t.pdf.salesDepartment, style: 'contactHeader' },
                         {
                           text: 'Adam Runo | +48 508 000 813 | adam.runo@ddgro.eu',
                           style: 'contactInfo',
@@ -547,7 +560,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                       width: '50%',
                       stack: [
                         {
-                          text: 'Dział obsługi klienta:',
+                          text: t.pdf.customerService,
                           style: 'contactHeader',
                         },
                         {
@@ -560,7 +573,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                   ],
                 },
                 {
-                  text: 'Producent: DECK-DRY POLSKA Sp. z o.o., Wenus 73A, 80-299 Gdańsk POLSKA',
+                  text: t.pdf.producer,
                   style: 'producerInfo',
                   alignment: 'center',
                   margin: [0, 5, 0, 0],
@@ -575,7 +588,11 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
             columns: [
               { text: 'www.ddgro.com', alignment: 'left' },
               {
-                text: `Strona ${currentPage} z ${pageCount}`,
+                text: `${
+                  applicationLang === 'pl' ? 'Strona' : 'Page'
+                } ${currentPage} ${
+                  applicationLang === 'pl' ? 'z' : 'of'
+                } ${pageCount}`,
                 alignment: 'right',
               },
             ],
@@ -585,23 +602,26 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           };
         },
         content: [
-          { text: 'Zestawienie wsporników', style: 'mainHeader' },
+          { text: t.pdf.supportsList, style: 'mainHeader' },
           {
             table: {
               headerRows: 1,
               widths: ['15%', '25%', '15%', '15%', '15%', '15%'],
               body: [
                 [
-                  { text: 'Nazwa Skrócona', style: 'tableHeader' },
-                  { text: 'Nazwa', style: 'tableHeader' },
-                  { text: 'Wysokość [mm]', style: 'tableHeader' },
-                  { text: 'Ilość', style: 'tableHeader' },
-                  { text: 'Cena katalogowa\nnetto', style: 'tableHeader' },
-                  { text: 'Łącznie netto', style: 'tableHeader' },
+                  { text: t.pdf.shortName, style: 'tableHeader' },
+                  { text: t.pdf.name, style: 'tableHeader' },
+                  { text: t.pdf.height, style: 'tableHeader' },
+                  { text: t.pdf.quantity, style: 'tableHeader' },
+                  { text: t.pdf.catalogPrice, style: 'tableHeader' },
+                  { text: t.pdf.totalNet, style: 'tableHeader' },
                 ],
                 ...items.map((item) => [
                   { text: item.short_name || 'N/A', style: 'tableCell' },
-                  { text: item.name || 'N/A', style: 'tableCell' },
+                  {
+                    text: item.name || 'N/A',
+                    style: 'tableCell',
+                  },
                   { text: item.height_mm || '--', style: 'tableCell' },
                   {
                     text: item.count || 0,
@@ -609,16 +629,22 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                     alignment: 'right',
                   },
                   {
-                    text: new Intl.NumberFormat('pl-PL', {
-                      minimumFractionDigits: 2,
-                    }).format(item.price_net || 0),
+                    text: new Intl.NumberFormat(
+                      `${applicationLang}-${applicationLang.toUpperCase()}`,
+                      {
+                        minimumFractionDigits: 2,
+                      },
+                    ).format(item.price_net || 0),
                     style: 'tableCell',
                     alignment: 'right',
                   },
                   {
-                    text: new Intl.NumberFormat('pl-PL', {
-                      minimumFractionDigits: 2,
-                    }).format(item.total_price || 0),
+                    text: new Intl.NumberFormat(
+                      `${applicationLang}-${applicationLang.toUpperCase()}`,
+                      {
+                        minimumFractionDigits: 2,
+                      },
+                    ).format(item.total_price || 0),
                     style: 'tableCell',
                     alignment: 'right',
                   },
@@ -663,7 +689,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                 table: {
                   body: [
                     [
-                      { text: 'Suma netto:', style: 'totalLabel' },
+                      { text: t.pdf.totalNetSum, style: 'totalLabel' },
                       { text: total + ' PLN', style: 'totalAmount' },
                     ],
                   ],
@@ -688,13 +714,14 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           {
             stack: [
               {
-                text: 'KATALOG DD GROUP',
+                text: t.pdf.catalogTitle,
                 style: 'qrTitle',
                 alignment: 'center',
                 margin: [0, 60, 0, 10],
               },
               {
-                text: 'ddgro.eu/katalog-pl',
+                // TODO: przygotowac katalogi w wersjach jezykowych  i podmienic na produkcji
+                text: 'ddgro.eu/katalog-' + applicationLang,
                 style: 'qrLink',
                 alignment: 'center',
                 margin: [0, 0, 0, 40],
@@ -715,20 +742,13 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
             margin: [0, 20, 0, 40],
           },
           {
-            text: 'Dlaczego warto zamówić u nas?',
+            text: t.pdf.whyOrderFromUs,
             style: 'footerHeader',
             alignment: 'center',
             margin: [0, 0, 0, 20],
           },
           {
-            ul: [
-              'Oferowane produkty są produkowane w Polsce.',
-              'Dostarczamy 1-2 dni na terenie PL.',
-              'Pomożemy Ci obliczyć zapotrzebownie na ilość wsporników i ich wysokość.',
-              'Nasze produkty posiadają Krajową Ocenę Techniczną ITB.',
-              'Zamawiasz dokładnie tyle sztuk ile potrzebujesz.',
-              'Masz możliwość zwrócenia niewykorzystanych ilości.',
-            ],
+            ul: t.pdf.benefits,
             style: 'footerList',
             alignment: 'center',
             margin: [100, 0, 100, 0],
@@ -863,23 +883,27 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       to: to,
       subject: `${
         process.env.NODE_ENV === 'development'
-          ? '[DEV] zestawienie wsporników DDGRO'
-          : 'Twoje zestawienie wsporników DDGRO'
+          ? t.email.devSubject
+          : t.email.subject
       }`,
-      template: 'order',
+      template: `order_${applicationLang}`,
       context: {
         items,
         total,
       },
       attachments: [
         {
-          filename: 'podsumowanie_wspornikow.pdf',
+          filename:
+            applicationLang === 'pl'
+              ? 'podsumowanie_wspornikow.pdf'
+              : 'supports_summary.pdf',
           path: pdfFilePath,
           contentType: 'application/pdf',
         },
       ],
     };
 
+    // do właściciela zawsze po polsku przychodzi info
     const toOwnerOptions = {
       from: `DDGRO.EU <contact@ddgro.eu>`,
       to: 'jozef.baar@ddgro.eu',
@@ -923,7 +947,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       },
       attachments: [
         {
-          filename: 'podsumowanie_wspornikow.pdf',
+          filename: `oferta_wyslana_do_klienta_id_#${application._id}.pdf`,
           path: pdfFilePath,
           contentType: 'application/pdf',
         },
@@ -946,7 +970,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     });
 
     res.status(200).json({
-      message: 'Oferta została wysłana!',
+      message: t.email.offerSent,
       environment: process.env.NODE_ENV,
     });
   } catch (e) {

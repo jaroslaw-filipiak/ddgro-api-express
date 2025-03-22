@@ -97,6 +97,10 @@ const ApplicationSchema = new mongoose.Schema({
   m_raptor: {
     type: Array,
   },
+  // lang
+  lang: {
+    type: String,
+  },
 });
 
 module.exports = mongoose.model('Application', ApplicationSchema);
