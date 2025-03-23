@@ -696,10 +696,20 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       },
       attachments: [
         {
-          filename:
-            applicationLang === 'pl'
-              ? 'podsumowanie_wspornikow.pdf'
-              : 'supports_summary.pdf',
+          filename: (() => {
+            switch (applicationLang) {
+              case 'pl':
+                return 'podsumowanie_wspornikow.pdf';
+              case 'de':
+                return 'stützen_zusammenfassung.pdf';
+              case 'fr':
+                return 'résumé_des_supports.pdf';
+              case 'es':
+                return 'resumen_de_soportes.pdf';
+              default:
+                return 'ddgro_offer.pdf';
+            }
+          })(),
           path: pdfFilePath,
           contentType: 'application/pdf',
         },
