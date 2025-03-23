@@ -9,13 +9,12 @@ const fs = require('fs');
 const util = require('util');
 const readFile = util.promisify(fs.readFile);
 const path = require('path');
-const puppeteer = require('puppeteer');
 
 const { createZBIORCZA_TP } = require('../../utils/create-zbiorcza-tp');
 const Products = require('../../models/Products');
-const Accessories = require('../../models/Accessories');
 
 const sendEmail = require('../../services/sendEmail');
+const translations = require('../../translations');
 
 router.post('/', async function (req, res, next) {
   const data = req.body;
@@ -25,206 +24,13 @@ router.post('/', async function (req, res, next) {
     application.save();
 
     res.json(201, {
-      message: `Otzymaliśmy formularz... przygotowywanie do wysłania PDF`,
+      // Tlumaczenia tego komunikatu są robione po froncie
+      message: `Application created successfully`,
       id: application._id,
+      lang: application.lang,
     });
   } catch (e) {
     res.json(400, { message: e, error: e });
-  }
-});
-
-router.get('/preview/:id', async function (req, res, next) {
-  const id = req.params.id;
-
-  try {
-    const application = await Application.findById(id);
-
-    if (!application) {
-      return res.status(404).json({ message: 'Nie znaleziono formularza!' });
-    }
-
-    const zbiorcza_TP = createZBIORCZA_TP(application);
-    const main_keys = Object.keys(zbiorcza_TP.main_keys);
-
-    // console.log('main_keys', main_keys);
-
-    const createPipeline = (series, values) => [
-      {
-        $match: {
-          height_mm: { $in: main_keys },
-          type: application.type,
-          series: series,
-        },
-      },
-      {
-        $addFields: {
-          sortKey: {
-            $switch: {
-              branches: main_keys.map((key, index) => ({
-                case: { $eq: ['$height_mm', key] },
-                then: index,
-              })),
-              default: main_keys.length, // Ensures any unmatched documents appear last
-            },
-          },
-          count: {
-            $arrayElemAt: [
-              values,
-              {
-                $indexOfArray: [main_keys, '$height_mm'],
-              },
-            ],
-          },
-        },
-      },
-      {
-        $sort: { sortKey: 1 },
-      },
-      {
-        $project: { sortKey: 0 }, // Remove the sortKey field from the final output
-      },
-    ];
-
-    const products_spiral =
-      (await Products.aggregate(
-        createPipeline('spiral', Object.values(zbiorcza_TP.m_spiral)),
-      )) || [];
-    // console.log('products_spiral:', products_spiral);
-
-    const products_standard =
-      (await Products.aggregate(
-        createPipeline('standard', Object.values(zbiorcza_TP.m_standard)),
-      )) || [];
-    // console.log('products_standard:', products_standard);
-
-    const products_max =
-      (await Products.aggregate(
-        createPipeline('max', Object.values(zbiorcza_TP.m_max)),
-      )) || [];
-    // console.log('products_max:', products_max);
-
-    const products_raptor =
-      (await Products.aggregate(
-        createPipeline('raptor', Object.values(zbiorcza_TP.m_raptor)),
-      )) || [];
-    // console.log('products_raptor:', products_raptor);
-
-    // Filter out unused values
-    const excludeFromSpiral = [
-      '120-220',
-      '220-320',
-      '320-420',
-      '350-550',
-      '550-750',
-      '750-950',
-    ];
-    const excludeFromStandard = [
-      '10-17',
-      '17-30',
-      '350-550',
-      '550-750',
-      '750-950',
-    ];
-    const excludeFromMax = ['10-17', '17-30', '30-50'];
-    const excludeFromRaptor = ['10-17']; //TODO: UPDATE
-
-    const filterProducts = (products, excludes) => {
-      if (!Array.isArray(products)) {
-        console.error('Expected products to be an array', products);
-        throw new Error('Invalid products array');
-      }
-      return products.filter(
-        (product) => !excludes.includes(product.height_mm),
-      );
-    };
-
-    const filteredSpiral = filterProducts(products_spiral, excludeFromSpiral);
-    const filteredStandard = filterProducts(
-      products_standard,
-      excludeFromStandard,
-    );
-    const filteredMax = filterProducts(products_max, excludeFromMax);
-    const filteredRaptor = filterProducts(products_raptor, excludeFromRaptor);
-
-    // console.log('filteredSpiral:', filteredSpiral);
-    // console.log('filteredStandard:', filteredStandard);
-    // console.log('filteredMax:', filteredMax);
-    // console.log('filteredRaptor:', filteredRaptor);
-
-    let orderArr = [];
-
-    if (application.type === 'slab') {
-      orderArr = [...filteredSpiral, ...filteredStandard, ...filteredMax];
-    } else if (application.type === 'wood') {
-      orderArr = [
-        ...filteredSpiral,
-        ...filteredStandard,
-        ...filteredMax,
-        ...filteredRaptor,
-      ];
-    }
-
-    // console.log('orderArr before filtering:', orderArr);
-
-    const filterOrder = (arr, lowest, highest) => {
-      if (!Array.isArray(arr)) {
-        console.error('Expected arr to be an array', arr);
-        throw new Error('Invalid order array');
-      }
-
-      return arr.filter((product) => {
-        const [min, max] = product.height_mm.split('-').map(Number);
-        return min <= highest && max >= lowest; // Retain ranges that overlap with the provided range
-      });
-    };
-
-    const order = filterOrder(
-      orderArr,
-      parseInt(application.lowest),
-      parseInt(application.highest),
-    );
-
-    if (!Array.isArray(order)) {
-      console.error('Expected order to be an array', order);
-      throw new Error('Invalid order array');
-    }
-
-    // console.log('Filtered order:', order);
-
-    res.status(200).json({
-      order: order,
-      application: application,
-      zbiorcza_TP: zbiorcza_TP,
-    });
-  } catch (e) {
-    console.error('Error:', e.message, e.stack);
-    res.status(400).json({ message: e.message, error: e });
-  }
-});
-
-router.get('/preview-pdf/:id', async function (req, res, next) {
-  try {
-    const id = req.params.id;
-
-    // Find the application in the database
-    const application = await Application.findById(id);
-
-    if (!application) {
-      return res.status(404).json({ message: 'Nie znaleziono formularza!' });
-    }
-
-    // Read the HTML template file
-    const templatePath = path.join(
-      __dirname,
-      '../../templates/pdf/template2.html',
-    );
-    const template = await readFile(templatePath, 'utf8'); // Use the promisified `readFile`
-
-    // Send the template as raw HTML content
-    res.send(template); // Use send() instead of render()
-  } catch (e) {
-    console.error('Error:', e.message, e.stack);
-    res.status(400).json({ message: e.message, error: e });
   }
 });
 
@@ -234,6 +40,10 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
 
   try {
     const application = await Application.findById(id);
+    const applicationLang = application.lang || 'pl';
+    const t = translations[applicationLang] || translations.pl;
+
+    // console.log('1. application:', application);
 
     if (!application) {
       return res.status(404).json({ message: 'Nie znaleziono formularza!' });
@@ -241,6 +51,9 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
 
     const zbiorcza_TP = createZBIORCZA_TP(application);
     const main_keys = Object.keys(zbiorcza_TP.main_keys);
+
+    // console.log('2. zbiorcza_TP:', zbiorcza_TP);
+    // console.log('3. main_keys:', main_keys);
 
     const createPipeline = (series, values) => [
       {
@@ -319,6 +132,8 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     const filterProducts = (products, excludes) =>
       products.filter((product) => !excludes.includes(product.height_mm));
 
+    console.log('filterProducts:', filterProducts.length);
+
     const filteredSpiral = filterProducts(products_spiral, excludeFromSpiral);
     const filteredStandard = filterProducts(
       products_standard,
@@ -339,6 +154,8 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         ...filteredRaptor,
       ];
     }
+
+    console.log('orderArr:', orderArr.length);
 
     const filterOrder = (arr, lowest, highest) => {
       return arr.filter((product) => {
@@ -377,6 +194,8 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     items = addCountAndPriceToItems(items, 'max', zbiorcza_TP.main_keys);
     items = addCountAndPriceToItems(items, 'raptor', zbiorcza_TP.main_keys);
 
+    console.log('items:', items.length);
+
     // Add products from application.products with full info
     const additionalProducts = application.products || [];
     additionalProducts.forEach((additionalProduct) => {
@@ -409,7 +228,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
 
     const additionalAccessories = application.additional_accessories || [];
     additionalAccessories.forEach((additionalAccessory) => {
-      console.log('additionalAccessory:', additionalAccessory);
+      console.log('additionalAccessory:', additionalAccessory.length || 0);
       // Always add as a new item, don't try to find existing ones
       items.push({
         ...additionalAccessory,
@@ -458,7 +277,9 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       const getExpiryDate = () => {
         const date = new Date();
         date.setMonth(date.getMonth() + 1);
-        return date.toLocaleDateString('pl-PL');
+        return date.toLocaleDateString(
+          `${applicationLang}-${applicationLang.toUpperCase()}`,
+        );
       };
 
       const docDefinition = {
@@ -494,7 +315,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                   columns: [
                     {
                       width: '*',
-                      text: 'OFERTA INDYWIDUALNA',
+                      text: t.pdf.offerTitle,
                       style: 'offerTitle',
                       alignment: 'center',
                     },
@@ -505,13 +326,19 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                   columns: [
                     {
                       width: '*',
+
                       text: [
-                        { text: 'Data utworzenia: ', style: 'dateLabel' },
+                        { text: t.pdf.dateCreated + ' ', style: 'dateLabel' },
                         {
-                          text: new Date().toLocaleDateString('pl-PL'),
+                          text: new Date().toLocaleDateString(
+                            `${applicationLang}-${applicationLang.toUpperCase()}`,
+                          ),
                           style: 'dateValue',
                         },
-                        { text: '    Ważna do: ', style: 'dateLabel' },
+                        {
+                          text: '    ' + t.pdf.validUntil + ' ',
+                          style: 'dateLabel',
+                        },
                         { text: getExpiryDate(), style: 'dateValue' },
                       ],
                       alignment: 'center',
@@ -524,7 +351,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                     {
                       width: '50%',
                       stack: [
-                        { text: 'Dział sprzedaży:', style: 'contactHeader' },
+                        { text: t.pdf.salesDepartment, style: 'contactHeader' },
                         {
                           text: 'Adam Runo | +48 508 000 813 | adam.runo@ddgro.eu',
                           style: 'contactInfo',
@@ -536,7 +363,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                       width: '50%',
                       stack: [
                         {
-                          text: 'Dział obsługi klienta:',
+                          text: t.pdf.customerService,
                           style: 'contactHeader',
                         },
                         {
@@ -549,7 +376,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                   ],
                 },
                 {
-                  text: 'Producent: DECK-DRY POLSKA Sp. z o.o., Wenus 73A, 80-299 Gdańsk POLSKA',
+                  text: t.pdf.producer,
                   style: 'producerInfo',
                   alignment: 'center',
                   margin: [0, 5, 0, 0],
@@ -564,7 +391,11 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
             columns: [
               { text: 'www.ddgro.com', alignment: 'left' },
               {
-                text: `Strona ${currentPage} z ${pageCount}`,
+                text: `${
+                  applicationLang === 'pl' ? 'Strona' : 'Page'
+                } ${currentPage} ${
+                  applicationLang === 'pl' ? 'z' : 'of'
+                } ${pageCount}`,
                 alignment: 'right',
               },
             ],
@@ -574,23 +405,26 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           };
         },
         content: [
-          { text: 'Zestawienie wsporników', style: 'mainHeader' },
+          { text: t.pdf.supportsList, style: 'mainHeader' },
           {
             table: {
               headerRows: 1,
               widths: ['15%', '25%', '15%', '15%', '15%', '15%'],
               body: [
                 [
-                  { text: 'Nazwa Skrócona', style: 'tableHeader' },
-                  { text: 'Nazwa', style: 'tableHeader' },
-                  { text: 'Wysokość [mm]', style: 'tableHeader' },
-                  { text: 'Ilość', style: 'tableHeader' },
-                  { text: 'Cena katalogowa\nnetto', style: 'tableHeader' },
-                  { text: 'Łącznie netto', style: 'tableHeader' },
+                  { text: t.pdf.shortName, style: 'tableHeader' },
+                  { text: t.pdf.name, style: 'tableHeader' },
+                  { text: t.pdf.height, style: 'tableHeader' },
+                  { text: t.pdf.quantity, style: 'tableHeader' },
+                  { text: t.pdf.catalogPrice, style: 'tableHeader' },
+                  { text: t.pdf.totalNet, style: 'tableHeader' },
                 ],
                 ...items.map((item) => [
                   { text: item.short_name || 'N/A', style: 'tableCell' },
-                  { text: item.name || 'N/A', style: 'tableCell' },
+                  {
+                    text: item.name || 'N/A',
+                    style: 'tableCell',
+                  },
                   { text: item.height_mm || '--', style: 'tableCell' },
                   {
                     text: item.count || 0,
@@ -598,16 +432,22 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                     alignment: 'right',
                   },
                   {
-                    text: new Intl.NumberFormat('pl-PL', {
-                      minimumFractionDigits: 2,
-                    }).format(item.price_net || 0),
+                    text: new Intl.NumberFormat(
+                      `${applicationLang}-${applicationLang.toUpperCase()}`,
+                      {
+                        minimumFractionDigits: 2,
+                      },
+                    ).format(item.price_net || 0),
                     style: 'tableCell',
                     alignment: 'right',
                   },
                   {
-                    text: new Intl.NumberFormat('pl-PL', {
-                      minimumFractionDigits: 2,
-                    }).format(item.total_price || 0),
+                    text: new Intl.NumberFormat(
+                      `${applicationLang}-${applicationLang.toUpperCase()}`,
+                      {
+                        minimumFractionDigits: 2,
+                      },
+                    ).format(item.total_price || 0),
                     style: 'tableCell',
                     alignment: 'right',
                   },
@@ -652,7 +492,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                 table: {
                   body: [
                     [
-                      { text: 'Suma netto:', style: 'totalLabel' },
+                      { text: t.pdf.totalNetSum, style: 'totalLabel' },
                       { text: total + ' PLN', style: 'totalAmount' },
                     ],
                   ],
@@ -677,13 +517,14 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           {
             stack: [
               {
-                text: 'KATALOG DD GROUP',
+                text: t.pdf.catalogTitle,
                 style: 'qrTitle',
                 alignment: 'center',
                 margin: [0, 60, 0, 10],
               },
               {
-                text: 'ddgro.eu/katalog-pl',
+                // TODO: przygotowac katalogi w wersjach jezykowych  i podmienic na produkcji
+                text: 'ddgro.eu/katalog-' + applicationLang,
                 style: 'qrLink',
                 alignment: 'center',
                 margin: [0, 0, 0, 40],
@@ -704,20 +545,13 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
             margin: [0, 20, 0, 40],
           },
           {
-            text: 'Dlaczego warto zamówić u nas?',
+            text: t.pdf.whyOrderFromUs,
             style: 'footerHeader',
             alignment: 'center',
             margin: [0, 0, 0, 20],
           },
           {
-            ul: [
-              'Oferowane produkty są produkowane w Polsce.',
-              'Dostarczamy 1-2 dni na terenie PL.',
-              'Pomożemy Ci obliczyć zapotrzebownie na ilość wsporników i ich wysokość.',
-              'Nasze produkty posiadają Krajową Ocenę Techniczną ITB.',
-              'Zamawiasz dokładnie tyle sztuk ile potrzebujesz.',
-              'Masz możliwość zwrócenia niewykorzystanych ilości.',
-            ],
+            ul: t.pdf.benefits,
             style: 'footerList',
             alignment: 'center',
             margin: [100, 0, 100, 0],
@@ -843,24 +677,36 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       });
     }
 
+    console.log('email items + total');
+    console.log(items.length);
+    console.log(total);
+
     const emailOptions = {
       from: `DDGRO.EU <contact@ddgro.eu>`,
       to: to,
-      subject: 'Twoje zestawienie wsporników DDGRO',
-      template: 'order',
+      subject: `${
+        process.env.NODE_ENV === 'development'
+          ? t.email.devSubject
+          : t.email.subject
+      }`,
+      template: `order_${applicationLang}`,
       context: {
         items,
         total,
       },
       attachments: [
         {
-          filename: 'podsumowanie_wspornikow.pdf',
+          filename:
+            applicationLang === 'pl'
+              ? 'podsumowanie_wspornikow.pdf'
+              : 'supports_summary.pdf',
           path: pdfFilePath,
           contentType: 'application/pdf',
         },
       ],
     };
 
+    // do właściciela zawsze po polsku przychodzi info
     const toOwnerOptions = {
       from: `DDGRO.EU <contact@ddgro.eu>`,
       to: 'jozef.baar@ddgro.eu',
@@ -904,21 +750,83 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       },
       attachments: [
         {
-          filename: 'podsumowanie_wspornikow.pdf',
+          filename: `oferta_wyslana_do_klienta_id_#${application._id}.pdf`,
           path: pdfFilePath,
           contentType: 'application/pdf',
         },
       ],
     };
 
-    await sendEmail(emailOptions);
-    await sendEmail(toOwnerOptions);
+    // development
+    if (process.env.NODE_ENV === 'development') {
+      const toDeveloperOptions = {
+        from: `DDGRO.EU <contact@ddgro.eu>`,
+        to: 'info@j-filipiak.pl',
+        subject: '[DEV] Informacja o nowym zamówieniu',
+        template: 'order_ext',
+        context: {
+          // Original data
+          items,
+          total,
+          // Additional application data
+          applicationId: application._id,
+          clientEmail: application.email,
+          formData: {
+            type: application.type,
+            totalArea: application.total_area,
+            count: application.count,
+            gapBetweenSlabs: application.gap_between_slabs,
+            lowest: application.lowest,
+            highest: application.highest,
+            terraceThickness: application.terrace_thickness,
+            distanceBetweenSupports: application.distance_between_supports,
+            joistHeight: application.joist_height,
+            slabWidth: application.slab_width,
+            slabHeight: application.slab_height,
+            slabThickness: application.slab_thickness,
+            tilesPerRow: application.tiles_per_row,
+            sumOfTiles: application.sum_of_tiles,
+            supportType: application.support_type,
+            mainSystem: application.main_system,
+            nameSurname: application.name_surname,
+            phone: application.phone,
+            proffesion: application.proffesion,
+            slabsCount: application.slabs_count,
+            supportsCount: application.supports_count,
+            createdAt: application.created_at,
+            // Include arrays if they exist
+            products: application.products || [],
+            accessories: application.accessories || [],
+            additionalAccessories: application.additional_accessories || [],
+          },
+        },
+        attachments: [
+          {
+            filename: `oferta_wyslana_do_klienta_id_#${application._id}.pdf`,
+            path: pdfFilePath,
+            contentType: 'application/pdf',
+          },
+        ],
+      };
+
+      //development
+      await sendEmail(emailOptions);
+      await sendEmail(toDeveloperOptions);
+    } else {
+      // production
+      await sendEmail(emailOptions);
+      await sendEmail(toOwnerOptions);
+    }
+
     // Clean up the file after sending the email
     fs.unlink(pdfFilePath, (err) => {
       if (err) console.error('Failed to delete temporary PDF file:', err);
     });
 
-    res.status(200).json({ message: 'Oferta została wysłana!' });
+    res.status(200).json({
+      message: t.email.offerSent,
+      environment: process.env.NODE_ENV,
+    });
   } catch (e) {
     res.status(400).json({ message: e.message, error: e });
   }

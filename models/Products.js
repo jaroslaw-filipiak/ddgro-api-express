@@ -198,11 +198,11 @@ ProductsSchema.methods.getAllLocalized = function (
 
 // Format price for display
 ProductsSchema.methods.formatPrice = function (amount, currency) {
-  let locale = 'en-US';
+  let locale = 'en';
 
   // Use appropriate locale for currency
-  if (currency === 'PLN') locale = 'pl-PL';
-  else if (currency === 'EUR') locale = 'de-DE';
+  if (currency === 'PLN') locale = 'pl';
+  else if (currency === 'EUR') locale = 'de';
 
   // Use Intl.NumberFormat for proper currency formatting
   return new Intl.NumberFormat(locale, {

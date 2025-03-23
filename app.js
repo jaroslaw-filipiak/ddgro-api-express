@@ -12,7 +12,14 @@ var apiAccesoriesRouter = require('./routes/api/accesories');
 var apiAProductsRouter = require('./routes/api/products');
 var apiApplicationsRouter = require('./routes/api/application');
 
-const allowedOrigins = ['http://localhost:3000', 'https://kalkulator.ddgro.eu'];
+const allowedOrigins =
+  process.env.NODE_ENV === 'development'
+    ? '*'
+    : [
+        'http://localhost:3000',
+        'https://kalkulator.ddgro.eu',
+        'https://ddgro-form-git-feature-front-964842-jaroslawfilipiaks-projects.vercel.app',
+      ];
 
 const corsOptions = {
   origin: allowedOrigins,
