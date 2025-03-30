@@ -770,7 +770,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     if (process.env.NODE_ENV === 'development') {
       const toDeveloperOptions = {
         from: `DDGRO.EU <contact@ddgro.eu>`,
-        to: 'info@j-filipiak.pl',
+        to: 'joozef.baar@ddgro.eu',
         subject: '[DEV] Informacja o nowym zamówieniu',
         template: 'order_ext',
         context: {
