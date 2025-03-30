@@ -1,4 +1,3 @@
-const express = require('express');
 const mongoose = require('mongoose');
 
 // Define available languages - Polish is default

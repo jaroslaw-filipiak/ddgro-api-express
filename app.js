@@ -1,16 +1,18 @@
-var express = require('express');
-var path = require('path');
-var cookieParser = require('cookie-parser');
-var logger = require('morgan');
-var dotenv = require('dotenv').config();
-var mongoose = require('mongoose');
-var cors = require('cors');
+const express = require('express');
+const path = require('path');
+const cookieParser = require('cookie-parser');
+const logger = require('morgan');
+const dotenv = require('dotenv').config();
+const mongoose = require('mongoose');
+const cors = require('cors');
+const passport = require('./config/passport');
 
-var indexRouter = require('./routes/index');
-var apiUsersRouter = require('./routes/api/users');
-var apiAccesoriesRouter = require('./routes/api/accesories');
-var apiAProductsRouter = require('./routes/api/products');
-var apiApplicationsRouter = require('./routes/api/application');
+const indexRouter = require('./routes/index');
+const apiUsersRouter = require('./routes/api/users');
+const apiAccesoriesRouter = require('./routes/api/accesories');
+const apiAProductsRouter = require('./routes/api/products');
+const apiApplicationsRouter = require('./routes/api/application');
+const apiAuthRouter = require('./routes/api/auth');
 
 const allowedOrigins =
   process.env.NODE_ENV === 'development'
@@ -28,7 +30,8 @@ const corsOptions = {
 
 mongoose.connect(process.env.MONGODB_URI);
 
-var app = express();
+const app = express();
+
 app.use(express.json({ limit: '50mb' }));
 
 app.use(cors(corsOptions));
@@ -37,8 +40,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(passport.initialize());
 
 app.use('/', indexRouter);
+app.use('/api/auth', apiAuthRouter);
 app.use('/api/users', apiUsersRouter);
 app.use('/api/accesories', apiAccesoriesRouter);
 app.use('/api/products', apiAProductsRouter);

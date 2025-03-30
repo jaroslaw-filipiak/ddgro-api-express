@@ -1,8 +1,9 @@
-var express = require("express");
+var express = require('express');
 var router = express.Router();
+var User = require('../../models/User');
 
-router.get("/", function (req, res, next) {
-  res.json({ message: "api/users" });
+router.get('/', function (req, res, next) {
+  res.json({ message: 'api/users' });
 });
 
 module.exports = router;

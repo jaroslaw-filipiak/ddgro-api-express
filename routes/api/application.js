@@ -678,8 +678,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     }
 
     console.log('email items + total');
-    console.log(items.length);
-    console.log(total);
+    console.log('template ', `order_${applicationLang}`);
 
     const emailOptions = {
       from: `DDGRO.EU <contact@ddgro.eu>`,

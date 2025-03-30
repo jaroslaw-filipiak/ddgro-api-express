@@ -1,5 +1,4 @@
-const express = require("express");
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 const AccessoriesSchema = new mongoose.Schema({
   code: {
@@ -34,4 +33,4 @@ const AccessoriesSchema = new mongoose.Schema({
   },
 });
 
-module.exports = mongoose.model("Accessories", AccessoriesSchema);
+module.exports = mongoose.model('Accessories', AccessoriesSchema);
