@@ -1,0 +1,45 @@
+# DDGRO Backend Project Structure
+
+## Express.js API Server
+Node.js backend with MongoDB integration for the DDGRO form application.
+
+### Core Application
+- **Main app**: [app.js](mdc:app.js) - Express application setup and middleware
+- **Server startup**: [bin/www](mdc:bin/www) - Server initialization and port configuration
+- **Package config**: [package.json](mdc:package.json) - Dependencies and scripts
+
+### API Routes Architecture
+- **Base routes**: [routes/index.js](mdc:routes/index.js) - Main route handler
+- **API endpoints**: [routes/api/](mdc:routes/api/) - All API route modules
+  - Authentication: [routes/api/auth.js](mdc:routes/api/auth.js)
+  - Products: [routes/api/products.js](mdc:routes/api/products.js)
+  - Accessories: [routes/api/accesories.js](mdc:routes/api/accesories.js)
+  - Applications: [routes/api/application.js](mdc:routes/api/application.js)
+  - Users: [routes/api/users.js](mdc:routes/api/users.js)
+
+### Data Layer
+- **MongoDB Models**: [models/](mdc:models/) - Mongoose schema definitions
+  - User model: [models/User.js](mdc:models/User.js)
+  - Products: [models/Products.js](mdc:models/Products.js)
+  - Accessories: [models/Accessories.js](mdc:models/Accessories.js)
+  - Applications: [models/Application.js](mdc:models/Application.js)
+- **Database migrations**: [migrations/](mdc:migrations/) - Data migration scripts
+
+### Authentication & Security
+- **Passport configuration**: [config/passport.js](mdc:config/passport.js) - Authentication strategies
+- **JWT token handling** - Secure API endpoint protection
+
+### Services & Utilities
+- **Email service**: [services/sendEmail.js](mdc:services/sendEmail.js) - Email sending functionality
+- **Utility functions**: [utils/](mdc:utils/) - Helper functions and tools
+
+### Templates & Localization
+- **Email templates**: [templates/emails/](mdc:templates/emails/) - Multi-language email templates
+- **PDF templates**: [templates/pdf/](mdc:templates/pdf/) - PDF generation templates
+- **Translations**: [translations/](mdc:translations/) - Backend translation files
+  - Translation index: [translations/index.js](mdc:translations/index.js)
+
+### Static Assets
+- **Public files**: [public/](mdc:public/) - Static assets and fonts
+- **Images**: [public/images/](mdc:public/images/) - Logo, QR codes, footer images
+- **Fonts**: [public/fonts/](mdc:public/fonts/) - Roboto font family
