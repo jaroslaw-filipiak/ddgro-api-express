@@ -9,36 +9,49 @@ const MULTILINGUAL_FIELDS = ['name', 'short_name', 'description'];
 
 const ProductsSchema = new mongoose.Schema(
   {
+    // Key/identifier from CSV first column
+    key: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
     id: {
-      type: Number,
+      type: mongoose.Schema.Types.Mixed, // Changed to Mixed to support decimal format like 102.010411
       required: true,
       unique: true,
     },
-    // Duplicate of 'series' for backward compatibility
-    series: {
-      type: String,
-    },
-    // New field to replace 'series' in the future
+    // Product categorization
     product_group: {
       type: String,
+      required: true, // This is always present in CSV (Kategoria)
+    },
+    series: {
+      type: String,
+      required: true, // This is always present in CSV (Grupa)
+      /*
+      "spiral"
+      "podstawki-tarasowe"
+      "max"
+      "raptor"
+      "standard"
+      */
     },
     type: {
-      type: String,
+      type: String, // tiles, wood, tiles & wood, etc. TODO: tiles poprzednio slab
     },
-    // Original distance_code field
     distance_code: {
-      type: mongoose.Schema.Types.Mixed,
+      type: String, // Short name/code like STA-030-045-K3-(100)
     },
-    // Duplicate of distance_code for future use
-    code: {
-      type: mongoose.Schema.Types.Mixed,
+    // Image management
+    image_url: {
+      type: String, // Google Drive URLs
     },
+    // Multilingual product names
     name: {
       type: Object,
       default: {},
       validate: {
         validator: function (value) {
-          // Ensure at least default language exists
           return (
             value &&
             value[DEFAULT_LANGUAGE] &&
@@ -57,51 +70,96 @@ const ProductsSchema = new mongoose.Schema(
       type: Object,
       default: {},
     },
+    // Physical dimensions
     height_mm: {
       type: String,
     },
     height_inch: {
       type: String,
     },
+    // Packaging information
     packaging: {
-      type: Number,
+      type: Number, // Number of pieces per package
     },
-    euro_palet: {
-      type: Number,
+    packaging_dimensions: {
+      cm: {
+        type: String, // e.g., "60 × 50 × 40"
+      },
+      inch: {
+        type: String, // e.g., "23 5/8 × 19 11/16 × 15 3/4"
+      },
     },
-    // Prices in different currencies
+    packaging_weight: {
+      kg: {
+        type: Number,
+      },
+      lbs: {
+        type: Number,
+      },
+    },
+    // Pallet information
+    euro_palet_products: {
+      type: Number, // Total products per pallet
+    },
+    euro_palet_packages: {
+      type: Number, // Number of packages per pallet (renamed from euro_palet)
+    },
+    pallet_dimensions: {
+      cm: {
+        type: String, // e.g., "120 × 100 × 220"
+      },
+      inch: {
+        type: String, // e.g., "47 1/4 × 39 3/8 × 86 5/8"
+      },
+    },
+    pallet_weight: {
+      kg: {
+        type: Number,
+      },
+      lbs: {
+        type: Number,
+      },
+    },
+    // Pricing information
+    price_unit: {
+      type: String,
+      enum: ['unit', 'packaging'],
+      default: 'unit',
+    },
     price: {
       type: Object,
       default: {},
       validate: {
         validator: function (value) {
-          // Ensure at least PLN price exists
           return value && value['PLN'] !== undefined;
         },
         message: (props) => `PLN price is required`,
       },
     },
+    catalog_number: {
+      type: Number, // Reference number in price list
+    },
     // Map language to currency code for automatic conversion
     language_currency_map: {
       type: Object,
       default: {
-        pl: 'PLN', // Polish Zloty (main currency)
-        en: 'USD', // US Dollar
-        de: 'EUR', // Euro
-        fr: 'EUR', // Euro
-        es: 'EUR', // Euro
+        pl: 'PLN',
+        en: 'USD',
+        de: 'EUR',
+        fr: 'EUR',
+        es: 'EUR',
       },
     },
     // VAT rates by country
     vat_rates: {
       type: Object,
       default: {
-        PL: 23, // 23% in Poland
-        DE: 19, // 19% in Germany
-        FR: 20, // 20% in France
-        ES: 21, // 21% in Spain
-        US: 0, // No VAT in US (handled by state taxes)
-        default: 23, // Default VAT rate (Polish)
+        PL: 23,
+        DE: 19,
+        FR: 20,
+        ES: 21,
+        US: 0,
+        default: 23,
       },
     },
     created_at: {
@@ -120,16 +178,11 @@ const ProductsSchema = new mongoose.Schema(
   },
 );
 
-// Pre-save hook to synchronize code with distance_code and product_group with series
+// Pre-save hook for data validation and processing
 ProductsSchema.pre('save', function (next) {
-  // Sync code with distance_code if distance_code exists
-  if (this.distance_code !== undefined && this.isModified('distance_code')) {
-    this.code = this.distance_code;
-  }
-
-  // Sync product_group with series if series exists
-  if (this.series !== undefined && this.isModified('series')) {
-    this.product_group = this.series;
+  // Generate key from product info if not provided
+  if (!this.key && this.distance_code && this.packaging) {
+    this.key = `${this.distance_code} ${this.packaging}pcs`;
   }
 
   next();
@@ -238,6 +291,63 @@ ProductsSchema.methods.getPriceWithVAT = function (
     currency: currency,
     formatted_net: this.formatPrice(netPrice, currency),
     formatted_gross: this.formatPrice(grossPrice, currency),
+  };
+};
+
+// Get comprehensive packaging information
+ProductsSchema.methods.getPackagingInfo = function () {
+  return {
+    pieces_per_package: this.packaging,
+    dimensions: this.packaging_dimensions,
+    weight: this.packaging_weight,
+    products_per_pallet: this.euro_palet_products,
+    packages_per_pallet: this.euro_palet_packages,
+    pallet_dimensions: this.pallet_dimensions,
+    pallet_weight: this.pallet_weight,
+  };
+};
+
+// Calculate total package weight for given quantity
+ProductsSchema.methods.calculateShippingWeight = function (quantity) {
+  if (!this.packaging_weight || !this.packaging_weight.kg) {
+    return null;
+  }
+
+  const packagesNeeded = Math.ceil(quantity / this.packaging);
+  const totalWeight = packagesNeeded * this.packaging_weight.kg;
+
+  return {
+    quantity: quantity,
+    packages_needed: packagesNeeded,
+    total_weight_kg: totalWeight,
+    total_weight_lbs: totalWeight * 2.20462, // Convert kg to lbs
+  };
+};
+
+// Get product type information
+ProductsSchema.methods.getTypeInfo = function () {
+  const typeMapping = {
+    tiles: { 
+      name: 'Płyty', 
+      description: 'Do płyt tarasowych',
+      icon: 'tiles'
+    },
+    wood: { 
+      name: 'Legary', 
+      description: 'Do legarów drewnianych',
+      icon: 'wood'
+    },
+    'tiles & wood': { 
+      name: 'Uniwersalny', 
+      description: 'Do płyt i legarów',
+      icon: 'universal'
+    },
+  };
+
+  return typeMapping[this.type] || { 
+    name: this.type, 
+    description: this.type,
+    icon: 'default'
   };
 };
 
