@@ -20,6 +20,8 @@ dist/
 # Testing
 coverage/
 
+temp/
+
 .env
 .env.development
 !.env.example

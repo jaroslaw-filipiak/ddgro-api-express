@@ -1,0 +1,124 @@
+# Frontend-Backend Integration
+
+## API Communication with Next.js Frontend
+The Express.js backend serves the Next.js frontend located in `../ddgro-form/`.
+
+### API Base URLs
+- **Development**: `http://localhost:3001` (backend)
+- **Frontend**: `http://localhost:3000` (Next.js)
+- **Production**: Configure appropriate domains
+
+### API Response Format
+Always return consistent JSON structure for frontend consumption:
+
+```javascript
+// Success responses
+res.json({
+  success: true,
+  data: responseData,
+  message: 'Optional success message'
+});
+
+// Error responses
+res.status(statusCode).json({
+  success: false,
+  error: 'Error message',
+  details: 'Optional error details'
+});
+
+// Paginated responses
+res.json({
+  success: true,
+  data: results,
+  pagination: {
+    page: currentPage,
+    limit: pageSize,
+    total: totalRecords,
+    pages: totalPages
+  }
+});
+```
+
+### CORS Configuration
+Configure CORS in [app.js](mdc:app.js) for frontend access:
+
+```javascript
+const cors = require('cors');
+
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept-Language']
+}));
+```
+
+### Authentication Flow
+- Frontend sends JWT tokens in Authorization header
+- Backend validates tokens using [config/passport.js](mdc:config/passport.js)
+- Protected routes return 401 for invalid/expired tokens
+
+### Internationalization Integration
+- Frontend sends `Accept-Language` header with locale
+- Backend uses this for email templates and error messages
+- Fallback to English if locale not supported
+
+### File Upload Handling
+```javascript
+// Handle form submissions with files
+router.post('/submit-form', upload.single('attachment'), async (req, res) => {
+  try {
+    const formData = req.body;
+    const uploadedFile = req.file;
+    
+    // Process form submission
+    // Generate PDF from templates/pdf/
+    // Send email using services/sendEmail.js
+    
+    res.json({ success: true, data: { submissionId } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+```
+
+### Data Models for Frontend
+Ensure API responses match frontend form structure:
+
+- **Products**: Match frontend product selection components
+- **Accessories**: Align with accessory form steps
+- **Applications**: Support form submission workflow
+- **User data**: Compatible with authentication flow
+
+### Error Handling for Frontend
+```javascript
+// Validation errors (400)
+res.status(400).json({
+  success: false,
+  error: 'Validation failed',
+  details: {
+    field1: 'Field is required',
+    field2: 'Invalid format'
+  }
+});
+
+// Authentication errors (401)
+res.status(401).json({
+  success: false,
+  error: 'Authentication required'
+});
+
+// Not found errors (404)
+res.status(404).json({
+  success: false,
+  error: 'Resource not found'
+});
+```
+
+### Environment Variables
+Configure environment-specific settings:
+- Database connection strings
+- Email service credentials
+- JWT secrets
+- Frontend URL for CORS
+- File upload directories
