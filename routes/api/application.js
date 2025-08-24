@@ -964,27 +964,21 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           ],
         };
 
-        // Send both emails and wait for completion
         await Promise.all([
           sendEmail(emailOptions),
           sendEmail(toDeveloperOptions),
         ]);
       } else {
-        // production - send both emails and wait for completion
-        await Promise.all([
-          sendEmail(emailOptions),
-          // sendEmail(toOwnerOptions)
-        ]);
+        // production
+        await Promise.all([sendEmail(emailOptions), sendEmail(toOwnerOptions)]);
       }
     } finally {
-      // Clean up the file after ALL emails are sent
-      // Use setTimeout to ensure nodemailer has finished processing the file
       setTimeout(() => {
         fs.unlink(pdfFilePath, (err) => {
           if (err) console.error('Failed to delete temporary PDF file:', err);
           else console.log('Temporary PDF file deleted successfully');
         });
-      }, 1000); // 1 second delay - file is read into memory as base64
+      }, 1000);
     }
 
     res.status(200).json({ message: 'Oferta została wysłana!' });
