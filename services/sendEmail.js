@@ -43,13 +43,13 @@ async function sendEmail(emailOptions) {
     const attachments = [];
     if (emailOptions.attachments && emailOptions.attachments.length > 0) {
       for (const attachment of emailOptions.attachments) {
-        // Read file as Buffer instead of converting to base64 string
+        // Read file as Buffer and convert to base64 for Nodemailer
         const content = await fs.promises.readFile(attachment.path);
         attachments.push({
-          content: content.toString('base64'),
           filename: attachment.filename,
-          type: attachment.contentType,
-          disposition: 'attachment',
+          content: content.toString('base64'),
+          contentType: attachment.contentType,
+          encoding: 'base64',
         });
       }
     }
