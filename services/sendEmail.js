@@ -1,4 +1,4 @@
-const sgMail = require('@sendgrid/mail');
+const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
 const handlebars = require('handlebars');
@@ -25,8 +25,6 @@ handlebars.registerHelper('getSupportTypeDescription', function (supportType) {
       return supportType || 'Nie określono';
   }
 });
-
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 async function sendEmail(emailOptions) {
   try {
@@ -64,23 +62,61 @@ async function sendEmail(emailOptions) {
       attachments: attachments,
     };
 
-    // Send email using SendGrid
-    await sgMail.send(msg);
-    console.log('Email sent successfully via SendGrid');
+    /*
+     *  ======================
+     *  DEVELOPMENT
+     *  ======================
+     */
 
-    setTimeout(async () => {
-      if (emailOptions.attachments) {
-        for (const attachment of emailOptions.attachments) {
-          if (attachment.path && fs.existsSync(attachment.path)) {
-            await fs.promises.unlink(attachment.path);
-          }
-        }
-      }
-    }, 6000);
+    if (process.env.NODE_ENV === 'development') {
+      const transporter = nodemailer.createTransport({
+        host: process.env.MAILTRAP_HOST,
+        port: process.env.MAILTRAP_PORT,
+        auth: {
+          user: process.env.MAILTRAP_USERNAME,
+          pass: process.env.MAILTRAP_PASSWORD,
+        },
+      });
+
+      const info = await transporter.sendMail({
+        to: emailOptions.to,
+        from: emailOptions.from,
+        subject: emailOptions.subject,
+        html: htmlContent,
+        attachments: attachments,
+      });
+
+      return { message: `Email sent successfully via Mailtrap`, info };
+    }
+
+    /*
+     *  ======================
+     *  PRODUCTION
+     *  ======================
+     */
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.MAIL_HOST,
+      port: process.env.MAIL_PORT,
+      auth: {
+        user: process.env.MAIL_USERNAME,
+        pass: process.env.MAIL_PASSWORD,
+      },
+    });
+
+    const info = await transporter.sendMail({
+      to: emailOptions.to,
+      from: emailOptions.from,
+      subject: emailOptions.subject,
+      html: htmlContent,
+      attachments: attachments,
+    });
+
+    return { message: `Email sent successfully via SMTP`, info };
   } catch (error) {
-    console.error('Failed to send email via SendGrid:', error);
+    console.error('Failed to send email:', error);
     if (error.response) {
-      console.error('SendGrid error details:', error.response.body);
+      console.error('Email error details:', error.response.body);
     }
     throw error;
   }
