@@ -26,7 +26,6 @@ router.post('/', async function (req, res, next) {
     application.save();
 
     res.json(201, {
-      // Tlumaczenia tego komunikatu są robione po froncie
       message: `Application created successfully`,
       id: application._id,
       lang: application.lang,
@@ -239,7 +238,6 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     const application = await Application.findById(id);
     const applicationLang = application.lang || 'pl';
     const t = translations[applicationLang] || translations.pl;
-
     if (!application) {
       return res.status(404).json({ message: 'Nie znaleziono formularza!' });
     }
@@ -941,71 +939,81 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       ],
     };
 
-    // development
-    if (process.env.NODE_ENV === 'development') {
-      const toDeveloperOptions = {
-        from: `DDGRO.EU <noreply@ddpedestals.eu>`,
-        to: 'joozef.baar@ddgro.eu',
-        subject: '[DEV] Informacja o nowym zamówieniu',
-        template: 'order_ext',
-        context: {
-          // Original data
-          items,
-          total,
-          // Additional application data
-          applicationId: application._id,
-          clientEmail: application.email,
-          formData: {
-            type: application.type,
-            totalArea: application.total_area,
-            count: application.count,
-            gapBetweenSlabs: application.gap_between_slabs,
-            lowest: application.lowest,
-            highest: application.highest,
-            terraceThickness: application.terrace_thickness,
-            distanceBetweenSupports: application.distance_between_supports,
-            joistHeight: application.joist_height,
-            slabWidth: application.slab_width,
-            slabHeight: application.slab_height,
-            slabThickness: application.slab_thickness,
-            tilesPerRow: application.tiles_per_row,
-            sumOfTiles: application.sum_of_tiles,
-            supportType: application.support_type,
-            mainSystem: application.main_system,
-            nameSurname: application.name_surname,
-            phone: application.phone,
-            proffesion: application.proffesion,
-            slabsCount: application.slabs_count,
-            supportsCount: application.supports_count,
-            createdAt: application.created_at,
-            // Include arrays if they exist
-            products: application.products || [],
-            accessories: application.accessories || [],
-            additionalAccessories: application.additional_accessories || [],
+    try {
+      // development
+      if (process.env.NODE_ENV === 'development') {
+        const toDeveloperOptions = {
+          from: `DDGRO.EU <noreply@ddpedestals.eu>`,
+          to: 'joozef.baar@ddgro.eu',
+          subject: '[DEV] Informacja o nowym zamówieniu',
+          template: 'order_ext',
+          context: {
+            // Original data
+            items,
+            total,
+            // Additional application data
+            applicationId: application._id,
+            clientEmail: application.email,
+            formData: {
+              type: application.type,
+              totalArea: application.total_area,
+              count: application.count,
+              gapBetweenSlabs: application.gap_between_slabs,
+              lowest: application.lowest,
+              highest: application.highest,
+              terraceThickness: application.terrace_thickness,
+              distanceBetweenSupports: application.distance_between_supports,
+              joistHeight: application.joist_height,
+              slabWidth: application.slab_width,
+              slabHeight: application.slab_height,
+              slabThickness: application.slab_thickness,
+              tilesPerRow: application.tiles_per_row,
+              sumOfTiles: application.sum_of_tiles,
+              supportType: application.support_type,
+              mainSystem: application.main_system,
+              nameSurname: application.name_surname,
+              phone: application.phone,
+              proffesion: application.proffesion,
+              slabsCount: application.slabs_count,
+              supportsCount: application.supports_count,
+              createdAt: application.created_at,
+              // Include arrays if they exist
+              products: application.products || [],
+              accessories: application.accessories || [],
+              additionalAccessories: application.additional_accessories || [],
+            },
           },
-        },
-        attachments: [
-          {
-            filename: `oferta_wyslana_do_klienta_id_#${application._id}.pdf`,
-            path: pdfFilePath,
-            contentType: 'application/pdf',
-          },
-        ],
-      };
+          attachments: [
+            {
+              filename: `oferta_wyslana_do_klienta_id_#${application._id}.pdf`,
+              path: pdfFilePath,
+              contentType: 'application/pdf',
+            },
+          ],
+        };
 
-      //development
-      await sendEmail(emailOptions);
-      await sendEmail(toDeveloperOptions);
-    } else {
-      // production
-      await sendEmail(emailOptions);
-      await sendEmail(toOwnerOptions);
+        // Send both emails and wait for completion
+        await Promise.all([
+          sendEmail(emailOptions),
+          sendEmail(toDeveloperOptions),
+        ]);
+      } else {
+        // production - send both emails and wait for completion
+        await Promise.all([
+          sendEmail(emailOptions),
+          // sendEmail(toOwnerOptions)
+        ]);
+      }
+    } finally {
+      // Clean up the file after ALL emails are sent
+      // Use setTimeout to ensure nodemailer has finished processing the file
+      setTimeout(() => {
+        fs.unlink(pdfFilePath, (err) => {
+          if (err) console.error('Failed to delete temporary PDF file:', err);
+          else console.log('Temporary PDF file deleted successfully');
+        });
+      }, 6000); // 6 second delay to ensure file is not in use
     }
-
-    // Clean up the file after sending the email
-    fs.unlink(pdfFilePath, (err) => {
-      if (err) console.error('Failed to delete temporary PDF file:', err);
-    });
 
     res.status(200).json({
       message: t.email.offerSent,

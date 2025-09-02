@@ -76,6 +76,10 @@ async function sendEmail(emailOptions) {
           user: process.env.MAILTRAP_USERNAME,
           pass: process.env.MAILTRAP_PASSWORD,
         },
+        pool: true,
+        maxConnections: 1,
+        rateDelta: 1000,
+        rateLimit: 5,
       });
 
       const info = await transporter.sendMail({
@@ -102,6 +106,10 @@ async function sendEmail(emailOptions) {
         user: process.env.MAIL_USERNAME,
         pass: process.env.MAIL_PASSWORD,
       },
+      pool: true,
+      maxConnections: 1,
+      rateDelta: 1000,
+      rateLimit: 5,
     });
 
     const info = await transporter.sendMail({
