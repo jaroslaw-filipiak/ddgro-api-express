@@ -9,9 +9,11 @@ const fs = require('fs');
 const util = require('util');
 const readFile = util.promisify(fs.readFile);
 const path = require('path');
+const puppeteer = require('puppeteer');
 
 const { createZBIORCZA_TP } = require('../../utils/create-zbiorcza-tp');
 const Products = require('../../models/Products');
+const Accessories = require('../../models/Accessories');
 
 const sendEmail = require('../../services/sendEmail');
 const translations = require('../../translations');
@@ -34,6 +36,201 @@ router.post('/', async function (req, res, next) {
   }
 });
 
+router.get('/preview/:id', async function (req, res, next) {
+  const id = req.params.id;
+
+  try {
+    const application = await Application.findById(id);
+
+    if (!application) {
+      return res.status(404).json({ message: 'Nie znaleziono formularza!' });
+    }
+
+    const zbiorcza_TP = createZBIORCZA_TP(application);
+    const main_keys = Object.keys(zbiorcza_TP.main_keys);
+
+    // console.log('main_keys', main_keys);
+
+    const createPipeline = (series, values) => [
+      {
+        $match: {
+          height_mm: { $in: main_keys },
+          type: application.type,
+          series: series,
+        },
+      },
+      {
+        $addFields: {
+          sortKey: {
+            $switch: {
+              branches: main_keys.map((key, index) => ({
+                case: { $eq: ['$height_mm', key] },
+                then: index,
+              })),
+              default: main_keys.length, // Ensures any unmatched documents appear last
+            },
+          },
+          count: {
+            $arrayElemAt: [
+              values,
+              {
+                $indexOfArray: [main_keys, '$height_mm'],
+              },
+            ],
+          },
+        },
+      },
+      {
+        $sort: { sortKey: 1 },
+      },
+      {
+        $project: { sortKey: 0 }, // Remove the sortKey field from the final output
+      },
+    ];
+
+    const products_spiral =
+      (await Products.aggregate(
+        createPipeline('spiral', Object.values(zbiorcza_TP.m_spiral)),
+      )) || [];
+    // console.log('products_spiral:', products_spiral);
+
+    const products_standard =
+      (await Products.aggregate(
+        createPipeline('standard', Object.values(zbiorcza_TP.m_standard)),
+      )) || [];
+    // console.log('products_standard:', products_standard);
+
+    const products_max =
+      (await Products.aggregate(
+        createPipeline('max', Object.values(zbiorcza_TP.m_max)),
+      )) || [];
+    // console.log('products_max:', products_max);
+
+    const products_raptor =
+      (await Products.aggregate(
+        createPipeline('raptor', Object.values(zbiorcza_TP.m_raptor)),
+      )) || [];
+    // console.log('products_raptor:', products_raptor);
+
+    // Filter out unused values
+    const excludeFromSpiral = [
+      '120-220',
+      '220-320',
+      '320-420',
+      '350-550',
+      '550-750',
+      '750-950',
+    ];
+    const excludeFromStandard = [
+      '10-17',
+      '17-30',
+      '350-550',
+      '550-750',
+      '750-950',
+    ];
+    const excludeFromMax = ['10-17', '17-30', '30-50'];
+    const excludeFromRaptor = ['10-17']; //TODO: UPDATE
+
+    const filterProducts = (products, excludes) => {
+      if (!Array.isArray(products)) {
+        console.error('Expected products to be an array', products);
+        throw new Error('Invalid products array');
+      }
+      return products.filter(
+        (product) => !excludes.includes(product.height_mm),
+      );
+    };
+
+    const filteredSpiral = filterProducts(products_spiral, excludeFromSpiral);
+    const filteredStandard = filterProducts(
+      products_standard,
+      excludeFromStandard,
+    );
+    const filteredMax = filterProducts(products_max, excludeFromMax);
+    const filteredRaptor = filterProducts(products_raptor, excludeFromRaptor);
+
+    // console.log('filteredSpiral:', filteredSpiral);
+    // console.log('filteredStandard:', filteredStandard);
+    // console.log('filteredMax:', filteredMax);
+    // console.log('filteredRaptor:', filteredRaptor);
+
+    let orderArr = [];
+
+    if (application.type === 'slab') {
+      orderArr = [...filteredSpiral, ...filteredStandard, ...filteredMax];
+    } else if (application.type === 'wood') {
+      orderArr = [
+        ...filteredSpiral,
+        ...filteredStandard,
+        ...filteredMax,
+        ...filteredRaptor,
+      ];
+    }
+
+    // console.log('orderArr before filtering:', orderArr);
+
+    const filterOrder = (arr, lowest, highest) => {
+      if (!Array.isArray(arr)) {
+        console.error('Expected arr to be an array', arr);
+        throw new Error('Invalid order array');
+      }
+
+      return arr.filter((product) => {
+        const [min, max] = product.height_mm.split('-').map(Number);
+        return min <= highest && max >= lowest; // Retain ranges that overlap with the provided range
+      });
+    };
+
+    const order = filterOrder(
+      orderArr,
+      parseInt(application.lowest),
+      parseInt(application.highest),
+    );
+
+    if (!Array.isArray(order)) {
+      console.error('Expected order to be an array', order);
+      throw new Error('Invalid order array');
+    }
+
+    // console.log('Filtered order:', order);
+
+    res.status(200).json({
+      order: order,
+      application: application,
+      zbiorcza_TP: zbiorcza_TP,
+    });
+  } catch (e) {
+    console.error('Error:', e.message, e.stack);
+    res.status(400).json({ message: e.message, error: e });
+  }
+});
+
+router.get('/preview-pdf/:id', async function (req, res, next) {
+  try {
+    const id = req.params.id;
+
+    // Find the application in the database
+    const application = await Application.findById(id);
+
+    if (!application) {
+      return res.status(404).json({ message: 'Nie znaleziono formularza!' });
+    }
+
+    // Read the HTML template file
+    const templatePath = path.join(
+      __dirname,
+      '../../templates/pdf/template2.html',
+    );
+    const template = await readFile(templatePath, 'utf8'); // Use the promisified `readFile`
+
+    // Send the template as raw HTML content
+    res.send(template); // Use send() instead of render()
+  } catch (e) {
+    console.error('Error:', e.message, e.stack);
+    res.status(400).json({ message: e.message, error: e });
+  }
+});
+
 router.post('/send-order-summary/:id', async function (req, res, next) {
   const id = req.params.id;
   const { to } = req.body;
@@ -43,17 +240,12 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     const applicationLang = application.lang || 'pl';
     const t = translations[applicationLang] || translations.pl;
 
-    // console.log('1. application:', application);
-
     if (!application) {
       return res.status(404).json({ message: 'Nie znaleziono formularza!' });
     }
 
     const zbiorcza_TP = createZBIORCZA_TP(application);
     const main_keys = Object.keys(zbiorcza_TP.main_keys);
-
-    // console.log('2. zbiorcza_TP:', zbiorcza_TP);
-    // console.log('3. main_keys:', main_keys);
 
     const createPipeline = (series, values) => [
       {
@@ -132,8 +324,6 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     const filterProducts = (products, excludes) =>
       products.filter((product) => !excludes.includes(product.height_mm));
 
-    console.log('filterProducts:', filterProducts.length);
-
     const filteredSpiral = filterProducts(products_spiral, excludeFromSpiral);
     const filteredStandard = filterProducts(
       products_standard,
@@ -154,8 +344,6 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         ...filteredRaptor,
       ];
     }
-
-    console.log('orderArr:', orderArr.length);
 
     const filterOrder = (arr, lowest, highest) => {
       return arr.filter((product) => {
@@ -194,8 +382,6 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     items = addCountAndPriceToItems(items, 'max', zbiorcza_TP.main_keys);
     items = addCountAndPriceToItems(items, 'raptor', zbiorcza_TP.main_keys);
 
-    console.log('items:', items.length);
-
     // Add products from application.products with full info
     const additionalProducts = application.products || [];
     additionalProducts.forEach((additionalProduct) => {
@@ -228,7 +414,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
 
     const additionalAccessories = application.additional_accessories || [];
     additionalAccessories.forEach((additionalAccessory) => {
-      console.log('additionalAccessory:', additionalAccessory.length || 0);
+      console.log('additionalAccessory:', additionalAccessory);
       // Always add as a new item, don't try to find existing ones
       items.push({
         ...additionalAccessory,
@@ -326,7 +512,6 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                   columns: [
                     {
                       width: '*',
-
                       text: [
                         { text: t.pdf.dateCreated + ' ', style: 'dateLabel' },
                         {
@@ -335,10 +520,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                           ),
                           style: 'dateValue',
                         },
-                        {
-                          text: '    ' + t.pdf.validUntil + ' ',
-                          style: 'dateLabel',
-                        },
+                        { text: t.pdf.validUntil + ' ', style: 'dateLabel' },
                         { text: getExpiryDate(), style: 'dateValue' },
                       ],
                       alignment: 'center',
@@ -421,10 +603,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                 ],
                 ...items.map((item) => [
                   { text: item.short_name || 'N/A', style: 'tableCell' },
-                  {
-                    text: item.name || 'N/A',
-                    style: 'tableCell',
-                  },
+                  { text: item.name || 'N/A', style: 'tableCell' },
                   { text: item.height_mm || '--', style: 'tableCell' },
                   {
                     text: item.count || 0,
@@ -677,11 +856,8 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       });
     }
 
-    console.log('email items + total');
-    console.log('template ', `order_${applicationLang}`);
-
     const emailOptions = {
-      from: `DDGRO.EU <contact@ddgro.eu>`,
+      from: `DDGRO.EU <noreply@ddpedestals.eu>`,
       to: to,
       subject: `${
         process.env.NODE_ENV === 'development'
@@ -714,10 +890,9 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         },
       ],
     };
-
     // do właściciela zawsze po polsku przychodzi info
     const toOwnerOptions = {
-      from: `DDGRO.EU <contact@ddgro.eu>`,
+      from: `DDGRO.EU <noreply@ddpedestals.eu>`,
       to: 'jozef.baar@ddgro.eu',
       subject: 'Informacja o nowym zamówieniu',
       template: 'order_ext',
@@ -769,7 +944,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     // development
     if (process.env.NODE_ENV === 'development') {
       const toDeveloperOptions = {
-        from: `DDGRO.EU <contact@ddgro.eu>`,
+        from: `DDGRO.EU <noreply@ddpedestals.eu>`,
         to: 'joozef.baar@ddgro.eu',
         subject: '[DEV] Informacja o nowym zamówieniu',
         template: 'order_ext',

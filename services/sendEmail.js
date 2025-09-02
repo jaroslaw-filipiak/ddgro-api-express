@@ -1,7 +1,3 @@
-/*
- * Sendgrid dla produkcji oraz nodemailer z mailtrap.io dla developmentu
- */
-const sgMail = require('@sendgrid/mail');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
@@ -30,8 +26,6 @@ handlebars.registerHelper('getSupportTypeDescription', function (supportType) {
   }
 });
 
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-
 async function sendEmail(emailOptions) {
   try {
     // Set up handlebars template engine
@@ -52,8 +46,7 @@ async function sendEmail(emailOptions) {
         // Read file as Buffer instead of converting to base64 string
         const content = await fs.promises.readFile(attachment.path);
         attachments.push({
-          // content: content.toString('base64'),
-          content: content,
+          content: content.toString('base64'),
           filename: attachment.filename,
           type: attachment.contentType,
           disposition: 'attachment',
@@ -98,25 +91,32 @@ async function sendEmail(emailOptions) {
 
     /*
      *  ======================
-     *  PROD
+     *  PRODUCTION
      *  ======================
      */
 
-    await sgMail.send(msg);
+    const transporter = nodemailer.createTransport({
+      host: process.env.MAIL_HOST,
+      port: process.env.MAIL_PORT,
+      auth: {
+        user: process.env.MAIL_USERNAME,
+        pass: process.env.MAIL_PASSWORD,
+      },
+    });
 
-    setTimeout(async () => {
-      if (emailOptions.attachments) {
-        for (const attachment of emailOptions.attachments) {
-          if (attachment.path && fs.existsSync(attachment.path)) {
-            await fs.promises.unlink(attachment.path);
-          }
-        }
-      }
-    }, 6000);
+    const info = await transporter.sendMail({
+      to: emailOptions.to,
+      from: emailOptions.from,
+      subject: emailOptions.subject,
+      html: htmlContent,
+      attachments: attachments,
+    });
+
+    return { message: `Email sent successfully via SMTP`, info };
   } catch (error) {
-    console.error('Failed to send email via SendGrid:', error);
+    console.error('Failed to send email:', error);
     if (error.response) {
-      console.error('SendGrid error details:', error.response.body);
+      console.error('Email error details:', error.response.body);
     }
     throw error;
   }
