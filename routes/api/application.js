@@ -998,7 +998,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           sendEmail(toDeveloperOptions),
         ]);
       } else {
-        // production - send both emails and wait for completion
+        // production
         await Promise.all([
           sendEmail(emailOptions),
           // sendEmail(toOwnerOptions)
