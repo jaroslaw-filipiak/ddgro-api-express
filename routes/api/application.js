@@ -1012,7 +1012,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           if (err) console.error('Failed to delete temporary PDF file:', err);
           else console.log('Temporary PDF file deleted successfully');
         });
-      }, 6000); // 6 second delay to ensure file is not in use
+      }, 1000); // 1 second delay - file is read into memory as base64
     }
 
     res.status(200).json({
