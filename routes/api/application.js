@@ -237,6 +237,12 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
   try {
     const application = await Application.findById(id);
     const applicationLang = application.lang || 'pl';
+
+    console.log('POST: SEND ORDER SUMMARY');
+    console.log('==============================');
+    console.log('application:', !!application);
+    console.log('lang:', applicationLang);
+
     const t = translations[applicationLang] || translations.pl;
     if (!application) {
       return res.status(404).json({ message: 'Nie znaleziono formularza!' });
@@ -244,6 +250,9 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
 
     const zbiorcza_TP = createZBIORCZA_TP(application);
     const main_keys = Object.keys(zbiorcza_TP.main_keys);
+
+    console.log('zbiorcza_TP:', !!zbiorcza_TP);
+    console.log('main_keys:', !!main_keys);
 
     const createPipeline = (series, values) => [
       {

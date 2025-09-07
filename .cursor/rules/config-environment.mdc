@@ -1,0 +1,549 @@
+---
+globs: *.js,.env*,*.json
+description: Configuration management and environment variable patterns
+---
+
+# Configuration and Environment Management
+
+## Environment Configuration
+
+Based on patterns from [app.js](mdc:app.js):
+
+### Environment Variables Setup
+
+```javascript
+// Load environment variables at application start
+const dotenv = require('dotenv').config();
+
+// Environment validation
+const requiredEnvVars = ['MONGODB_URI', 'JWT_SECRET', 'NODE_ENV'];
+
+const validateEnvironment = () => {
+  const missing = requiredEnvVars.filter((envVar) => !process.env[envVar]);
+
+  if (missing.length > 0) {
+    console.error('Missing required environment variables:', missing);
+    process.exit(1);
+  }
+};
+
+validateEnvironment();
+```
+
+### Environment-Based Configuration
+
+```javascript
+// Database configuration
+const mongoConfig = {
+  development: {
+    uri: process.env.MONGODB_URI_DEV || 'mongodb://localhost:27017/ddgro_dev',
+    options: {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 5000,
+    },
+  },
+  production: {
+    uri: process.env.MONGODB_URI,
+    options: {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 30000,
+      maxPoolSize: 10,
+      bufferMaxEntries: 0,
+    },
+  },
+};
+
+// Get configuration based on environment
+const getMongoConfig = () => {
+  const env = process.env.NODE_ENV || 'development';
+  return mongoConfig[env] || mongoConfig.development;
+};
+
+// Apply configuration
+const config = getMongoConfig();
+mongoose.connect(config.uri, config.options);
+```
+
+## CORS Configuration
+
+Based on [app.js](mdc:app.js):
+
+### Dynamic CORS Setup
+
+```javascript
+const allowedOrigins =
+  process.env.NODE_ENV === 'development'
+    ? '*' // Allow all origins in development
+    : [
+        'http://localhost:3000',
+        'https://kalkulator.ddgro.eu',
+        'https://ddgro-form-git-feature-front-964842-jaroslawfilipiaks-projects.vercel.app',
+        ...(process.env.ADDITIONAL_ORIGINS
+          ? process.env.ADDITIONAL_ORIGINS.split(',')
+          : []),
+      ];
+
+const corsOptions = {
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 200, // For legacy browser support
+};
+
+app.use(cors(corsOptions));
+```
+
+### CORS Preflight Handling
+
+```javascript
+// Handle preflight requests
+app.options('*', cors(corsOptions));
+
+// Custom CORS middleware for specific routes
+const customCors = (origins = []) => {
+  return cors({
+    origin: (origin, callback) => {
+      if (!origin || origins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+  });
+};
+
+// Usage for specific routes
+app.use('/api/admin', customCors(['https://admin.ddgro.eu']));
+```
+
+## Email Configuration
+
+Based on [services/sendEmail.js](mdc:services/sendEmail.js):
+
+### Environment-Based Email Configuration
+
+```javascript
+const getEmailConfig = () => {
+  const isDevelopment = process.env.NODE_ENV === 'development';
+
+  if (isDevelopment) {
+    // Development - Mailtrap configuration
+    return {
+      host: process.env.MAILTRAP_HOST,
+      port: parseInt(process.env.MAILTRAP_PORT) || 587,
+      auth: {
+        user: process.env.MAILTRAP_USERNAME,
+        pass: process.env.MAILTRAP_PASSWORD,
+      },
+      pool: true,
+      maxConnections: 1,
+      rateDelta: 1000,
+      rateLimit: 5,
+    };
+  } else {
+    // Production - SMTP configuration
+    return {
+      host: process.env.MAIL_HOST,
+      port: parseInt(process.env.MAIL_PORT) || 587,
+      secure: process.env.MAIL_SECURE === 'true', // true for 465, false for other ports
+      auth: {
+        user: process.env.MAIL_USERNAME,
+        pass: process.env.MAIL_PASSWORD,
+      },
+      pool: true,
+      maxConnections: parseInt(process.env.MAIL_MAX_CONNECTIONS) || 5,
+      rateDelta: parseInt(process.env.MAIL_RATE_DELTA) || 1000,
+      rateLimit: parseInt(process.env.MAIL_RATE_LIMIT) || 10,
+    };
+  }
+};
+
+// Validate email configuration
+const validateEmailConfig = (config) => {
+  const required = ['host', 'port', 'auth.user', 'auth.pass'];
+  const missing = required.filter((key) => {
+    const value = key.includes('.')
+      ? key.split('.').reduce((obj, k) => obj?.[k], config)
+      : config[key];
+    return !value;
+  });
+
+  if (missing.length > 0) {
+    throw new Error(`Missing email configuration: ${missing.join(', ')}`);
+  }
+};
+```
+
+## JWT Configuration
+
+Based on [config/passport.js](mdc:config/passport.js):
+
+### JWT Configuration Management
+
+```javascript
+const jwtConfig = {
+  secret: process.env.JWT_SECRET,
+  issuer: process.env.JWT_ISSUER || 'ddgro-backend',
+  audience: process.env.JWT_AUDIENCE || 'ddgro-app',
+  expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  algorithm: process.env.JWT_ALGORITHM || 'HS256',
+};
+
+// Validate JWT configuration
+const validateJwtConfig = () => {
+  if (!jwtConfig.secret) {
+    throw new Error('JWT_SECRET environment variable is required');
+  }
+
+  if (jwtConfig.secret.length < 32) {
+    throw new Error('JWT_SECRET must be at least 32 characters long');
+  }
+};
+
+validateJwtConfig();
+
+// JWT options for passport
+const jwtOptions = {
+  jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+  secretOrKey: jwtConfig.secret,
+  issuer: jwtConfig.issuer,
+  audience: jwtConfig.audience,
+  algorithms: [jwtConfig.algorithm],
+};
+```
+
+## Application Configuration
+
+```javascript
+// Central configuration object
+const config = {
+  // Server configuration
+  server: {
+    port: parseInt(process.env.PORT) || 3001,
+    host: process.env.HOST || 'localhost',
+    environment: process.env.NODE_ENV || 'development',
+  },
+
+  // Database configuration
+  database: {
+    uri: process.env.MONGODB_URI,
+    options: {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 30000,
+      maxPoolSize: parseInt(process.env.DB_MAX_POOL_SIZE) || 10,
+    },
+  },
+
+  // Authentication configuration
+  auth: {
+    jwtSecret: process.env.JWT_SECRET,
+    jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS) || 12,
+    maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS) || 5,
+    lockoutDuration:
+      parseInt(process.env.LOCKOUT_DURATION) || 2 * 60 * 60 * 1000, // 2 hours
+  },
+
+  // Email configuration
+  email: getEmailConfig(),
+
+  // File upload configuration
+  upload: {
+    maxFileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024, // 10MB
+    allowedFileTypes: (
+      process.env.ALLOWED_FILE_TYPES || 'pdf,jpg,jpeg,png'
+    ).split(','),
+    uploadPath: process.env.UPLOAD_PATH || './uploads',
+  },
+
+  // Rate limiting configuration
+  rateLimit: {
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW) || 15 * 60 * 1000, // 15 minutes
+    max: parseInt(process.env.RATE_LIMIT_MAX) || 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+  },
+
+  // Logging configuration
+  logging: {
+    level: process.env.LOG_LEVEL || 'info',
+    file: process.env.LOG_FILE || './logs/app.log',
+    maxSize: process.env.LOG_MAX_SIZE || '10m',
+    maxFiles: parseInt(process.env.LOG_MAX_FILES) || 5,
+  },
+
+  // External APIs
+  apis: {
+    paymentGateway: {
+      url: process.env.PAYMENT_API_URL,
+      apiKey: process.env.PAYMENT_API_KEY,
+      timeout: parseInt(process.env.PAYMENT_API_TIMEOUT) || 30000,
+    },
+  },
+};
+
+// Configuration validation
+const validateConfig = () => {
+  const requiredFields = [
+    'database.uri',
+    'auth.jwtSecret',
+    'email.host',
+    'email.auth.user',
+    'email.auth.pass',
+  ];
+
+  const missing = requiredFields.filter((field) => {
+    const value = field.split('.').reduce((obj, key) => obj?.[key], config);
+    return !value;
+  });
+
+  if (missing.length > 0) {
+    throw new Error(`Missing required configuration: ${missing.join(', ')}`);
+  }
+};
+
+validateConfig();
+
+module.exports = config;
+```
+
+## Environment File Templates
+
+### Development Environment (.env.development)
+
+```bash
+# Server Configuration
+NODE_ENV=development
+PORT=3001
+HOST=localhost
+
+# Database
+MONGODB_URI=mongodb://localhost:27017/ddgro_development
+
+# JWT Authentication
+JWT_SECRET=your-very-long-secret-key-here
+JWT_EXPIRES_IN=7d
+JWT_ISSUER=ddgro-backend
+JWT_AUDIENCE=ddgro-app
+
+# Email Configuration (Mailtrap for development)
+MAILTRAP_HOST=smtp.mailtrap.io
+MAILTRAP_PORT=587
+MAILTRAP_USERNAME=your-mailtrap-username
+MAILTRAP_PASSWORD=your-mailtrap-password
+
+# Security
+BCRYPT_ROUNDS=10
+MAX_LOGIN_ATTEMPTS=5
+LOCKOUT_DURATION=7200000
+
+# File Upload
+MAX_FILE_SIZE=10485760
+ALLOWED_FILE_TYPES=pdf,jpg,jpeg,png
+UPLOAD_PATH=./uploads
+
+# Rate Limiting
+RATE_LIMIT_WINDOW=900000
+RATE_LIMIT_MAX=100
+
+# Logging
+LOG_LEVEL=debug
+LOG_FILE=./logs/development.log
+```
+
+### Production Environment (.env.production)
+
+```bash
+# Server Configuration
+NODE_ENV=production
+PORT=3001
+
+# Database
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/ddgro_production
+
+# JWT Authentication
+JWT_SECRET=your-super-secure-production-secret-key
+JWT_EXPIRES_IN=24h
+JWT_ISSUER=ddgro-backend
+JWT_AUDIENCE=ddgro-app
+
+# Email Configuration (Production SMTP)
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_SECURE=false
+MAIL_USERNAME=your-email@gmail.com
+MAIL_PASSWORD=your-app-password
+
+# Security
+BCRYPT_ROUNDS=12
+MAX_LOGIN_ATTEMPTS=3
+LOCKOUT_DURATION=3600000
+
+# CORS
+ADDITIONAL_ORIGINS=https://your-production-domain.com
+
+# File Upload
+MAX_FILE_SIZE=5242880
+UPLOAD_PATH=/var/www/uploads
+
+# Rate Limiting
+RATE_LIMIT_WINDOW=900000
+RATE_LIMIT_MAX=50
+
+# Logging
+LOG_LEVEL=warn
+LOG_FILE=/var/log/ddgro/app.log
+LOG_MAX_SIZE=20m
+LOG_MAX_FILES=10
+```
+
+## Configuration Loader
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+class ConfigLoader {
+  constructor() {
+    this.config = {};
+    this.loadEnvironmentConfig();
+  }
+
+  loadEnvironmentConfig() {
+    const env = process.env.NODE_ENV || 'development';
+    const envFile = `.env.${env}`;
+    const defaultEnvFile = '.env';
+
+    // Load default .env first
+    if (fs.existsSync(defaultEnvFile)) {
+      require('dotenv').config({ path: defaultEnvFile });
+    }
+
+    // Override with environment-specific file
+    if (fs.existsSync(envFile)) {
+      require('dotenv').config({ path: envFile, override: true });
+    }
+  }
+
+  get(key, defaultValue = null) {
+    return process.env[key] || defaultValue;
+  }
+
+  getInt(key, defaultValue = 0) {
+    const value = this.get(key);
+    return value ? parseInt(value, 10) : defaultValue;
+  }
+
+  getBool(key, defaultValue = false) {
+    const value = this.get(key);
+    if (typeof value === 'string') {
+      return value.toLowerCase() === 'true';
+    }
+    return defaultValue;
+  }
+
+  getArray(key, separator = ',', defaultValue = []) {
+    const value = this.get(key);
+    return value
+      ? value.split(separator).map((item) => item.trim())
+      : defaultValue;
+  }
+
+  isDevelopment() {
+    return this.get('NODE_ENV') === 'development';
+  }
+
+  isProduction() {
+    return this.get('NODE_ENV') === 'production';
+  }
+
+  isTest() {
+    return this.get('NODE_ENV') === 'test';
+  }
+}
+
+module.exports = new ConfigLoader();
+```
+
+## Health Check Configuration
+
+```javascript
+// Health check endpoint configuration
+const healthCheck = {
+  timeout: parseInt(process.env.HEALTH_CHECK_TIMEOUT) || 5000,
+  checks: {
+    database: true,
+    email: process.env.HEALTH_CHECK_EMAIL === 'true',
+    externalApis: process.env.HEALTH_CHECK_APIS === 'true',
+  },
+};
+
+// Health check implementation
+const performHealthCheck = async () => {
+  const results = {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    checks: {},
+  };
+
+  try {
+    // Database health check
+    if (healthCheck.checks.database) {
+      await mongoose.connection.db.admin().ping();
+      results.checks.database = { status: 'healthy' };
+    }
+
+    // Email service health check
+    if (healthCheck.checks.email) {
+      const transporter = createEmailTransporter();
+      await transporter.verify();
+      results.checks.email = { status: 'healthy' };
+    }
+  } catch (error) {
+    results.status = 'unhealthy';
+    results.checks.error = error.message;
+  }
+
+  return results;
+};
+
+module.exports = { healthCheck, performHealthCheck };
+```
+
+## Configuration Best Practices
+
+### Environment Variable Naming
+
+- Use UPPERCASE with underscores: `DATABASE_URL`, `JWT_SECRET`
+- Group related variables with prefixes: `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`
+- Use descriptive names: `MAX_LOGIN_ATTEMPTS` instead of `MAX_ATTEMPTS`
+
+### Default Values
+
+- Always provide sensible defaults for non-sensitive configuration
+- Use environment-specific defaults when appropriate
+- Validate configuration on application startup
+
+### Security Considerations
+
+- Never commit `.env` files to version control
+- Use different secrets for different environments
+- Rotate secrets regularly in production
+- Use environment variable validation to catch misconfigurations early
+
+### Testing Configuration
+
+```javascript
+// Test configuration override
+if (process.env.NODE_ENV === 'test') {
+  config.database.uri =
+    process.env.MONGODB_TEST_URI || 'mongodb://localhost:27017/ddgro_test';
+  config.auth.jwtSecret = 'test-secret-key';
+  config.email.host = 'localhost'; // Use local test server
+}
+```

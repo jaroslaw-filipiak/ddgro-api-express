@@ -11,6 +11,10 @@ handlebars.registerHelper('getTypeName', function (type) {
   return type === 'slab' ? 'Płyty' : 'Deski';
 });
 
+/*
+* Tutaj narazie bez tłumaczenia ponieważ to info idzie do maila technicznego na chwilę obecną tylko 
+do joozef.baar@ddgro.eu także to info wysyłam po Polsku
+*/
 handlebars.registerHelper('getSupportTypeDescription', function (supportType) {
   switch (supportType) {
     case 'type1':

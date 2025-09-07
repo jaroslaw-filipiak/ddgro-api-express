@@ -1,0 +1,755 @@
+---
+globs: *.js
+description: Authentication, authorization, and security patterns
+---
+
+# Authentication and Security Patterns
+
+## Passport.js Configuration
+
+Based on [config/passport.js](mdc:config/passport.js):
+
+### Passport Setup
+
+```javascript
+const passport = require('passport');
+const JwtStrategy = require('passport-jwt').Strategy;
+const ExtractJwt = require('passport-jwt').ExtractJwt;
+const LocalStrategy = require('passport-local').Strategy;
+const User = require('../models/User');
+
+// JWT Strategy
+const jwtOptions = {
+  jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+  secretOrKey: process.env.JWT_SECRET,
+  issuer: process.env.JWT_ISSUER || 'ddgro-backend',
+  audience: process.env.JWT_AUDIENCE || 'ddgro-app',
+};
+
+passport.use(
+  new JwtStrategy(jwtOptions, async (payload, done) => {
+    try {
+      const user = await User.findById(payload.sub);
+
+      if (user) {
+        return done(null, user);
+      } else {
+        return done(null, false);
+      }
+    } catch (error) {
+      return done(error, false);
+    }
+  }),
+);
+
+// Local Strategy for login
+passport.use(
+  new LocalStrategy(
+    {
+      usernameField: 'email',
+      passwordField: 'password',
+    },
+    async (email, password, done) => {
+      try {
+        const user = await User.findOne({ email: email.toLowerCase() });
+
+        if (!user) {
+          return done(null, false, { message: 'Invalid email or password' });
+        }
+
+        const isValidPassword = await user.comparePassword(password);
+
+        if (!isValidPassword) {
+          return done(null, false, { message: 'Invalid email or password' });
+        }
+
+        return done(null, user);
+      } catch (error) {
+        return done(error);
+      }
+    },
+  ),
+);
+
+module.exports = passport;
+```
+
+## User Model with Authentication
+
+```javascript
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+const UserSchema = new mongoose.Schema(
+  {
+    email: {
+      type: String,
+      required: [true, 'Email is required'],
+      unique: true,
+      lowercase: true,
+      trim: true,
+      validate: {
+        validator: function (v) {
+          return /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(v);
+        },
+        message: 'Please enter a valid email address',
+      },
+    },
+    password: {
+      type: String,
+      required: [true, 'Password is required'],
+      minlength: [6, 'Password must be at least 6 characters'],
+      select: false, // Don't include password in queries by default
+    },
+    firstName: {
+      type: String,
+      required: [true, 'First name is required'],
+      trim: true,
+    },
+    lastName: {
+      type: String,
+      required: [true, 'Last name is required'],
+      trim: true,
+    },
+    role: {
+      type: String,
+      enum: ['user', 'admin', 'super_admin'],
+      default: 'user',
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    lastLogin: {
+      type: Date,
+    },
+    loginAttempts: {
+      type: Number,
+      default: 0,
+    },
+    lockUntil: {
+      type: Date,
+    },
+  },
+  {
+    timestamps: true,
+  },
+);
+
+// Pre-save hash password
+UserSchema.pre('save', async function (next) {
+  if (!this.isModified('password')) return next();
+
+  try {
+    const salt = await bcrypt.genSalt(12);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Compare password method
+UserSchema.methods.comparePassword = async function (candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
+};
+
+// Generate JWT token
+UserSchema.methods.generateAuthToken = function () {
+  const payload = {
+    sub: this._id,
+    email: this.email,
+    role: this.role,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 days
+  };
+
+  return jwt.sign(payload, process.env.JWT_SECRET, {
+    issuer: process.env.JWT_ISSUER || 'ddgro-backend',
+    audience: process.env.JWT_AUDIENCE || 'ddgro-app',
+  });
+};
+
+// Check if account is locked
+UserSchema.methods.isLocked = function () {
+  return !!(this.lockUntil && this.lockUntil > Date.now());
+};
+
+// Increment login attempts
+UserSchema.methods.incLoginAttempts = function () {
+  // Maximum 5 attempts before locking for 2 hours
+  const maxAttempts = 5;
+  const lockTime = 2 * 60 * 60 * 1000; // 2 hours
+
+  if (this.lockUntil && this.lockUntil < Date.now()) {
+    return this.updateOne({
+      $unset: { lockUntil: 1 },
+      $set: { loginAttempts: 1 },
+    });
+  }
+
+  const updates = { $inc: { loginAttempts: 1 } };
+
+  if (this.loginAttempts + 1 >= maxAttempts && !this.isLocked()) {
+    updates.$set = { lockUntil: Date.now() + lockTime };
+  }
+
+  return this.updateOne(updates);
+};
+
+// Reset login attempts
+UserSchema.methods.resetLoginAttempts = function () {
+  return this.updateOne({
+    $unset: { loginAttempts: 1, lockUntil: 1 },
+  });
+};
+
+module.exports = mongoose.model('User', UserSchema);
+```
+
+## Authentication Routes
+
+```javascript
+const express = require('express');
+const passport = require('passport');
+const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
+const User = require('../../models/User');
+
+const router = express.Router();
+
+// Rate limiting for auth routes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit each IP to 5 requests per windowMs
+  message: 'Too many authentication attempts, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Login route
+router.post('/login', authLimiter, async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email and password are required',
+      });
+    }
+
+    // Find user and include password field
+    const user = await User.findOne({ email: email.toLowerCase() }).select(
+      '+password',
+    );
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid email or password',
+      });
+    }
+
+    // Check if account is locked
+    if (user.isLocked()) {
+      return res.status(423).json({
+        success: false,
+        error:
+          'Account temporarily locked due to too many failed login attempts',
+      });
+    }
+
+    // Check if account is active
+    if (!user.isActive) {
+      return res.status(401).json({
+        success: false,
+        error: 'Account is deactivated',
+      });
+    }
+
+    // Verify password
+    const isValidPassword = await user.comparePassword(password);
+
+    if (!isValidPassword) {
+      await user.incLoginAttempts();
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid email or password',
+      });
+    }
+
+    // Reset login attempts and update last login
+    await user.resetLoginAttempts();
+    await user.updateOne({ lastLogin: new Date() });
+
+    // Generate token
+    const token = user.generateAuthToken();
+
+    res.json({
+      success: true,
+      data: {
+        token,
+        user: {
+          id: user._id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Register route (admin only)
+router.post(
+  '/register',
+  passport.authenticate('jwt', { session: false }),
+  requireRole(['admin', 'super_admin']),
+  async (req, res, next) => {
+    try {
+      const { email, password, firstName, lastName, role = 'user' } = req.body;
+
+      // Validate input
+      if (!email || !password || !firstName || !lastName) {
+        return res.status(400).json({
+          success: false,
+          error: 'All fields are required',
+        });
+      }
+
+      // Check if user already exists
+      const existingUser = await User.findOne({ email: email.toLowerCase() });
+      if (existingUser) {
+        return res.status(409).json({
+          success: false,
+          error: 'User already exists',
+        });
+      }
+
+      // Create new user
+      const user = new User({
+        email: email.toLowerCase(),
+        password,
+        firstName,
+        lastName,
+        role,
+      });
+
+      await user.save();
+
+      res.status(201).json({
+        success: true,
+        data: {
+          user: {
+            id: user._id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            role: user.role,
+          },
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// Get current user
+router.get(
+  '/me',
+  passport.authenticate('jwt', { session: false }),
+  (req, res) => {
+    res.json({
+      success: true,
+      data: {
+        user: {
+          id: req.user._id,
+          email: req.user.email,
+          firstName: req.user.firstName,
+          lastName: req.user.lastName,
+          role: req.user.role,
+          lastLogin: req.user.lastLogin,
+        },
+      },
+    });
+  },
+);
+
+// Logout (client-side token invalidation)
+router.post('/logout', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Logged out successfully',
+  });
+});
+
+module.exports = router;
+```
+
+## Authorization Middleware
+
+### Role-Based Access Control
+
+```javascript
+// Require specific roles
+const requireRole = (roles = []) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+      });
+    }
+
+    if (roles.length && !roles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions',
+      });
+    }
+
+    next();
+  };
+};
+
+// Check if user owns resource
+const requireOwnership = (resourceModel, resourceIdParam = 'id') => {
+  return async (req, res, next) => {
+    try {
+      const resourceId = req.params[resourceIdParam];
+      const resource = await resourceModel.findById(resourceId);
+
+      if (!resource) {
+        return res.status(404).json({
+          success: false,
+          error: 'Resource not found',
+        });
+      }
+
+      // Admin can access any resource
+      if (req.user.role === 'admin' || req.user.role === 'super_admin') {
+        return next();
+      }
+
+      // Check ownership
+      if (
+        resource.userId &&
+        resource.userId.toString() !== req.user._id.toString()
+      ) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied',
+        });
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+};
+
+module.exports = { requireRole, requireOwnership };
+```
+
+## Security Middleware
+
+### Request Validation and Sanitization
+
+```javascript
+const validator = require('validator');
+const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
+
+// Input sanitization
+const sanitizeInput = (req, res, next) => {
+  const sanitize = (obj) => {
+    for (let key in obj) {
+      if (typeof obj[key] === 'string') {
+        obj[key] = validator.escape(obj[key]);
+      } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+        sanitize(obj[key]);
+      }
+    }
+  };
+
+  if (req.body) sanitize(req.body);
+  if (req.query) sanitize(req.query);
+  if (req.params) sanitize(req.params);
+
+  next();
+};
+
+// API rate limiting
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Strict rate limiting for sensitive endpoints
+const strictLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit each IP to 5 requests per windowMs
+  message: 'Too many requests, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Security headers
+const securityHeaders = helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+});
+
+module.exports = {
+  sanitizeInput,
+  apiLimiter,
+  strictLimiter,
+  securityHeaders,
+};
+```
+
+## Session Management
+
+### JWT Token Management
+
+```javascript
+const jwt = require('jsonwebtoken');
+const Redis = require('redis');
+
+class TokenManager {
+  constructor() {
+    this.redis = Redis.createClient({
+      url: process.env.REDIS_URL,
+    });
+  }
+
+  // Blacklist token (for logout)
+  async blacklistToken(token) {
+    try {
+      const decoded = jwt.decode(token);
+      const expiry = decoded.exp - Math.floor(Date.now() / 1000);
+
+      if (expiry > 0) {
+        await this.redis.setex(`blacklist:${token}`, expiry, 'true');
+      }
+    } catch (error) {
+      console.error('Error blacklisting token:', error);
+    }
+  }
+
+  // Check if token is blacklisted
+  async isTokenBlacklisted(token) {
+    try {
+      const result = await this.redis.get(`blacklist:${token}`);
+      return result === 'true';
+    } catch (error) {
+      console.error('Error checking token blacklist:', error);
+      return false;
+    }
+  }
+
+  // Verify token and check blacklist
+  async verifyToken(token) {
+    try {
+      // Check if token is blacklisted
+      const isBlacklisted = await this.isTokenBlacklisted(token);
+      if (isBlacklisted) {
+        throw new Error('Token has been revoked');
+      }
+
+      // Verify token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      return decoded;
+    } catch (error) {
+      throw error;
+    }
+  }
+}
+
+module.exports = new TokenManager();
+```
+
+## Password Security
+
+### Password Policies
+
+```javascript
+const passwordValidator = require('password-validator');
+
+// Create password schema
+const passwordSchema = new passwordValidator();
+
+passwordSchema
+  .is()
+  .min(8) // Minimum length 8
+  .is()
+  .max(100) // Maximum length 100
+  .has()
+  .uppercase() // Must have uppercase letters
+  .has()
+  .lowercase() // Must have lowercase letters
+  .has()
+  .digits(2) // Must have at least 2 digits
+  .has()
+  .not()
+  .spaces() // Should not have spaces
+  .is()
+  .not()
+  .oneOf(['Passw0rd', 'Password123']); // Blacklist common passwords
+
+// Validate password
+const validatePassword = (password) => {
+  const errors = passwordSchema.validate(password, { list: true });
+
+  if (errors.length > 0) {
+    return {
+      isValid: false,
+      errors: errors.map((error) => {
+        switch (error) {
+          case 'min':
+            return 'Password must be at least 8 characters long';
+          case 'uppercase':
+            return 'Password must contain uppercase letters';
+          case 'lowercase':
+            return 'Password must contain lowercase letters';
+          case 'digits':
+            return 'Password must contain at least 2 digits';
+          case 'spaces':
+            return 'Password cannot contain spaces';
+          case 'oneOf':
+            return 'Password is too common';
+          default:
+            return 'Password does not meet requirements';
+        }
+      }),
+    };
+  }
+
+  return { isValid: true, errors: [] };
+};
+
+module.exports = { validatePassword };
+```
+
+## API Key Authentication
+
+### API Key Management
+
+```javascript
+const crypto = require('crypto');
+
+const ApiKeySchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+    },
+    keyHash: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    permissions: [
+      {
+        type: String,
+        enum: ['read', 'write', 'admin'],
+      },
+    ],
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    lastUsed: {
+      type: Date,
+    },
+    expiresAt: {
+      type: Date,
+    },
+  },
+  {
+    timestamps: true,
+  },
+);
+
+// Generate API key
+ApiKeySchema.statics.generateApiKey = function () {
+  return crypto.randomBytes(32).toString('hex');
+};
+
+// Hash API key
+ApiKeySchema.statics.hashApiKey = function (apiKey) {
+  return crypto.createHash('sha256').update(apiKey).digest('hex');
+};
+
+// API key authentication middleware
+const authenticateApiKey = async (req, res, next) => {
+  const apiKey = req.headers['x-api-key'];
+
+  if (!apiKey) {
+    return res.status(401).json({
+      success: false,
+      error: 'API key required',
+    });
+  }
+
+  try {
+    const hashedKey = ApiKey.hashApiKey(apiKey);
+    const apiKeyDoc = await ApiKey.findOne({
+      keyHash: hashedKey,
+      isActive: true,
+      $or: [
+        { expiresAt: { $exists: false } },
+        { expiresAt: { $gt: new Date() } },
+      ],
+    }).populate('userId');
+
+    if (!apiKeyDoc) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid API key',
+      });
+    }
+
+    // Update last used
+    await apiKeyDoc.updateOne({ lastUsed: new Date() });
+
+    req.user = apiKeyDoc.userId;
+    req.apiKey = apiKeyDoc;
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  ApiKey: mongoose.model('ApiKey', ApiKeySchema),
+  authenticateApiKey,
+};
+```
