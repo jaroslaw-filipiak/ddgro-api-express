@@ -13,7 +13,6 @@ const puppeteer = require('puppeteer');
 
 const { createZBIORCZA_TP } = require('../../utils/create-zbiorcza-tp');
 const Products = require('../../models/Products');
-const Accessories = require('../../models/Accessories');
 
 const sendEmail = require('../../services/sendEmail');
 const translations = require('../../translations');
@@ -55,7 +54,7 @@ router.get('/preview/:id', async function (req, res, next) {
         $match: {
           height_mm: { $in: main_keys },
           type: application.type,
-          series: series,
+          series: { $regex: new RegExp(`^${series}$`, 'i') }, // case-insensitive match
         },
       },
       {
@@ -238,12 +237,8 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     const application = await Application.findById(id);
     const applicationLang = application.lang || 'pl';
 
-    console.log('POST: SEND ORDER SUMMARY');
-    console.log('==============================');
-    console.log('application:', !!application);
-    console.log('lang:', applicationLang);
+    const t = translations[applicationLang] || translations.pl || {};
 
-    const t = translations[applicationLang] || translations.pl;
     if (!application) {
       return res.status(404).json({ message: 'Nie znaleziono formularza!' });
     }
@@ -251,33 +246,48 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     const zbiorcza_TP = createZBIORCZA_TP(application);
     const main_keys = Object.keys(zbiorcza_TP.main_keys);
 
-    console.log('zbiorcza_TP:', !!zbiorcza_TP);
-    console.log('main_keys:', !!main_keys);
+    const getPriceNet = (item) => {
+      // Use language_currency_map to get correct currency
+      if (item.price && item.language_currency_map) {
+        const currency =
+          item.language_currency_map[applicationLang] ||
+          item.language_currency_map['pl'] ||
+          'PLN';
+        return Number(item.price[currency]) || Number(item.price.PLN) || 0;
+      }
 
-    const createPipeline = (series, values) => [
+      // Fallback to PLN price if available
+      if (item.price && item.price.PLN) {
+        return Number(item.price.PLN) || 0;
+      }
+
+      return 0;
+    };
+
+    const createPipeline = (series, values, heightKeys) => [
       {
         $match: {
-          height_mm: { $in: main_keys },
+          height_mm: { $in: heightKeys },
           type: application.type,
-          series: series,
+          series: { $regex: new RegExp(`^${series}$`, 'i') },
         },
       },
       {
         $addFields: {
           sortKey: {
             $switch: {
-              branches: main_keys.map((key, index) => ({
+              branches: heightKeys.map((key, index) => ({
                 case: { $eq: ['$height_mm', key] },
                 then: index,
               })),
-              default: main_keys.length, // Ensures any unmatched documents appear last
+              default: heightKeys.length,
             },
           },
           count: {
             $arrayElemAt: [
               values,
               {
-                $indexOfArray: [main_keys, '$height_mm'],
+                $indexOfArray: [heightKeys, '$height_mm'],
               },
             ],
           },
@@ -287,21 +297,37 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         $sort: { sortKey: 1 },
       },
       {
-        $project: { sortKey: 0 }, // Remove the sortKey field from the final output
+        $project: { sortKey: 0 },
       },
     ];
 
     const products_spiral = await Products.aggregate(
-      createPipeline('spiral', Object.values(zbiorcza_TP.m_spiral)),
+      createPipeline(
+        'spiral',
+        Object.values(zbiorcza_TP.m_spiral),
+        Object.keys(zbiorcza_TP.m_spiral),
+      ),
     );
     const products_standard = await Products.aggregate(
-      createPipeline('standard', Object.values(zbiorcza_TP.m_standard)),
+      createPipeline(
+        'standard',
+        Object.values(zbiorcza_TP.m_standard),
+        Object.keys(zbiorcza_TP.m_standard),
+      ),
     );
     const products_max = await Products.aggregate(
-      createPipeline('max', Object.values(zbiorcza_TP.m_max)),
+      createPipeline(
+        'max',
+        Object.values(zbiorcza_TP.m_max),
+        Object.keys(zbiorcza_TP.m_max),
+      ),
     );
     const products_raptor = await Products.aggregate(
-      createPipeline('raptor', Object.values(zbiorcza_TP.m_raptor)),
+      createPipeline(
+        'raptor',
+        Object.values(zbiorcza_TP.m_raptor),
+        Object.keys(zbiorcza_TP.m_raptor),
+      ),
     );
 
     const excludeFromSpiral = [
@@ -366,19 +392,17 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     );
 
     function addCountAndPriceToItems(items, series, countObj) {
-      // First, filter out items with a count of 0 based on countObj
       const filteredItems = items.filter((item) => {
-        const itemCount = Math.ceil(countObj[item.height_mm] || 0);
-        return itemCount > 0; // Only include items with a count greater than 0
+        const itemCount = Math.round(countObj[item.height_mm] || 0);
+        return itemCount > 0;
       });
 
-      // Then, map over filtered items to add count and total price
       return filteredItems.map((item) => {
         if (item.series === series) {
-          const count = Math.ceil(countObj[item.height_mm] || 0);
+          const count = Math.round(countObj[item.height_mm] || 0);
+          const priceNet = getPriceNet(item);
           item.count = count;
-          item.total_price = (count * item.price_net).toFixed(2);
-          // Assuming price formatting logic is correct and omitted for brevity
+          item.total_price = (count * priceNet).toFixed(2);
         }
         return item;
       });
@@ -395,18 +419,18 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       const existingItem = items.find(
         (item) => item.height_mm === additionalProduct.height_mm,
       );
+
       if (existingItem) {
-        existingItem.count += additionalProduct.count;
-        existingItem.total_price = (
-          existingItem.count * existingItem.price_net
-        ).toFixed(2);
+        existingItem.count += Number(additionalProduct.count) || 0;
+        const priceNet = getPriceNet(existingItem);
+        existingItem.total_price = (existingItem.count * priceNet).toFixed(2);
       } else {
+        const priceNet = getPriceNet(additionalProduct);
         items.push({
           ...additionalProduct,
-          count: additionalProduct.count,
-          price_net: additionalProduct.price_net,
+          count: Number(additionalProduct.count) || 0,
           total_price: (
-            additionalProduct.count * additionalProduct.price_net
+            (Number(additionalProduct.count) || 0) * priceNet
           ).toFixed(2),
         });
       }
@@ -421,23 +445,26 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
 
     const additionalAccessories = application.additional_accessories || [];
     additionalAccessories.forEach((additionalAccessory) => {
-      console.log('additionalAccessory:', additionalAccessory);
-      // Always add as a new item, don't try to find existing ones
+      const count = Number(additionalAccessory.count) || 0;
+      const priceNet = getPriceNet(additionalAccessory);
+
       items.push({
         ...additionalAccessory,
-        count: Number(additionalAccessory.count),
-        price_net: Number(additionalAccessory.price_net),
-        total_price: (
-          Number(additionalAccessory.count) *
-          Number(additionalAccessory.price_net)
-        ).toFixed(2),
+        count: count,
+        total_price: (count * priceNet).toFixed(2),
       });
     });
 
-    // Recalculate total price of the full order
+    // Recalculate total price of the full order using rounded counts
     const totalOrderPrice = items
-      .reduce((sum, item) => sum + parseFloat(item.total_price), 0)
+      .reduce((sum, item) => {
+        const roundedCount = Math.round(item.count || 0);
+        const itemTotal = roundedCount * getPriceNet(item);
+        return sum + itemTotal;
+      }, 0)
       .toFixed(2);
+
+    // TODO: Tutaj based on lang
     const total = new Intl.NumberFormat('pl-PL', {
       style: 'decimal',
       minimumFractionDigits: 2,
@@ -520,14 +547,20 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                     {
                       width: '*',
                       text: [
-                        { text: t.pdf.dateCreated + ' ', style: 'dateLabel' },
+                        {
+                          text: t.pdf.dateCreated + '  ',
+                          style: 'dateLabel',
+                        },
                         {
                           text: new Date().toLocaleDateString(
                             `${applicationLang}-${applicationLang.toUpperCase()}`,
                           ),
                           style: 'dateValue',
                         },
-                        { text: t.pdf.validUntil + ' ', style: 'dateLabel' },
+                        {
+                          text: t.pdf.validUntil + '  ',
+                          style: 'dateLabel',
+                        },
                         { text: getExpiryDate(), style: 'dateValue' },
                       ],
                       alignment: 'center',
@@ -598,10 +631,9 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           {
             table: {
               headerRows: 1,
-              widths: ['15%', '25%', '15%', '15%', '15%', '15%'],
+              widths: ['40%', '15%', '15%', '15%', '15%'],
               body: [
                 [
-                  { text: t.pdf.shortName, style: 'tableHeader' },
                   { text: t.pdf.name, style: 'tableHeader' },
                   { text: t.pdf.height, style: 'tableHeader' },
                   { text: t.pdf.quantity, style: 'tableHeader' },
@@ -609,11 +641,17 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                   { text: t.pdf.totalNet, style: 'tableHeader' },
                 ],
                 ...items.map((item) => [
-                  { text: item.short_name || 'N/A', style: 'tableCell' },
-                  { text: item.name || 'N/A', style: 'tableCell' },
+                  {
+                    text:
+                      item.name?.[applicationLang] ||
+                      item.name?.pl ||
+                      item.name ||
+                      'N/A',
+                    style: 'tableCell',
+                  },
                   { text: item.height_mm || '--', style: 'tableCell' },
                   {
-                    text: item.count || 0,
+                    text: Math.round(item.count || 0),
                     style: 'tableCell',
                     alignment: 'right',
                   },
@@ -623,7 +661,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                       {
                         minimumFractionDigits: 2,
                       },
-                    ).format(item.price_net || 0),
+                    ).format(getPriceNet(item)),
                     style: 'tableCell',
                     alignment: 'right',
                   },
@@ -633,7 +671,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                       {
                         minimumFractionDigits: 2,
                       },
-                    ).format(item.total_price || 0),
+                    ).format(Math.round(item.count || 0) * getPriceNet(item)),
                     style: 'tableCell',
                     alignment: 'right',
                   },
@@ -710,7 +748,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
               },
               {
                 // TODO: przygotowac katalogi w wersjach jezykowych  i podmienic na produkcji
-                text: 'ddgro.eu/katalog-' + applicationLang,
+                text: 'ddgro.eu/ddgro-' + applicationLang,
                 style: 'qrLink',
                 alignment: 'center',
                 margin: [0, 0, 0, 40],
@@ -854,7 +892,6 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     };
 
     const pdfFilePath = await createPDF(items, total);
-
     // Check if the file exists
     if (!fs.existsSync(pdfFilePath)) {
       return res.status(500).json({
@@ -862,7 +899,6 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           'Nie udało się utoworzyć pliku PDF. Skontaktuj się z administratorem',
       });
     }
-
     const emailOptions = {
       from: `DDGRO.EU <noreply@ddpedestals.eu>`,
       to: to,
@@ -1029,6 +1065,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       environment: process.env.NODE_ENV,
     });
   } catch (e) {
+    console.error('Error:', e.message, e.stack);
     res.status(400).json({ message: e.message, error: e });
   }
 });

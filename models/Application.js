@@ -74,6 +74,7 @@ const ApplicationSchema = new mongoose.Schema({
   supports_count: {
     type: Number,
   },
+  // TODO: to trzeba zmienić na additional_products ponieważ nazwa jest myląca
   products: {
     type: Array,
   },
