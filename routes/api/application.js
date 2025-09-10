@@ -1044,10 +1044,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         ]);
       } else {
         // production
-        await Promise.all([
-          sendEmail(emailOptions),
-          // sendEmail(toOwnerOptions)
-        ]);
+        await Promise.all([sendEmail(emailOptions), sendEmail(toOwnerOptions)]);
       }
     } finally {
       // Clean up the file after ALL emails are sent
