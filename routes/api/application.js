@@ -24,13 +24,13 @@ router.post('/', async function (req, res, next) {
     const application = await Application.create(data);
     application.save();
 
-    res.json(201, {
+    res.status(201).json({
       message: `Application created successfully`,
       id: application._id,
       lang: application.lang,
     });
   } catch (e) {
-    res.json(400, { message: e, error: e });
+    res.status(400).json({ message: e, error: e });
   }
 });
 
@@ -230,10 +230,14 @@ router.get('/preview-pdf/:id', async function (req, res, next) {
 });
 
 router.post('/send-order-summary/:id', async function (req, res, next) {
+  const startTime = Date.now();
   const id = req.params.id;
   const { to } = req.body;
 
   try {
+    console.log('📧 Send order summary - Starting process');
+
+    const dbStart = Date.now();
     const application = await Application.findById(id);
     const applicationLang = application.lang || 'pl';
 

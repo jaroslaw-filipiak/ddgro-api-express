@@ -74,11 +74,11 @@ async function sendEmail(emailOptions) {
 
     if (process.env.NODE_ENV === 'development') {
       const transporter = nodemailer.createTransport({
-        host: process.env.MAILTRAP_HOST,
-        port: process.env.MAILTRAP_PORT,
+        host: process.env.MAIL_HOST,
+        port: process.env.MAIL_PORT,
         auth: {
-          user: process.env.MAILTRAP_USERNAME,
-          pass: process.env.MAILTRAP_PASSWORD,
+          user: process.env.MAIL_USERNAME,
+          pass: process.env.MAIL_PASSWORD,
         },
         pool: true,
         maxConnections: 1,
@@ -87,14 +87,14 @@ async function sendEmail(emailOptions) {
       });
 
       const info = await transporter.sendMail({
-        to: emailOptions.to,
+        to: 'info@j-filipiak.pl',
         from: emailOptions.from,
         subject: emailOptions.subject,
         html: htmlContent,
         attachments: attachments,
       });
 
-      return { message: `Email sent successfully via Mailtrap`, info };
+      return { message: `Email sent successfully [development] [smtp]`, info };
     }
 
     /*

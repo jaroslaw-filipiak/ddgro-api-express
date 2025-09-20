@@ -5,10 +5,26 @@ const router = express.Router();
 const Products = require('../../models/Products');
 
 router.get('/', async function (req, res, next) {
+  const startTime = Date.now();
   try {
+    console.log('📊 Products API - Starting query');
+
     const products = await Products.find();
+
+    const duration = Date.now() - startTime;
+    const dataSize = JSON.stringify(products).length;
+
+    console.log(`📊 Products API - Query completed:`, {
+      duration: `${duration}ms`,
+      count: products.length,
+      dataSize: `${Math.round(dataSize/1024)}KB`,
+      memoryUsage: `${Math.round(process.memoryUsage().heapUsed/1024/1024)}MB`
+    });
+
     res.status(200).json({ data: products });
   } catch (error) {
+    const duration = Date.now() - startTime;
+    console.error(`❌ Products API - Error after ${duration}ms:`, error.message);
     next(error);
   }
 });
