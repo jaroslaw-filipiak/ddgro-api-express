@@ -87,7 +87,7 @@ async function sendEmail(emailOptions) {
       });
 
       const info = await transporter.sendMail({
-        to: 'info@j-filipiak.pl',
+        to: 'jozef.baar@ddgro.eu',
         from: emailOptions.from,
         subject: emailOptions.subject,
         html: htmlContent,
