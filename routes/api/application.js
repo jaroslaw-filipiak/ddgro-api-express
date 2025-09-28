@@ -16,6 +16,7 @@ const Products = require('../../models/Products');
 const Accessories = require('../../models/Accessories');
 
 const sendEmail = require('../../services/sendEmail');
+const net = require('net');
 
 router.post('/', async function (req, res, next) {
   const data = req.body;
@@ -985,6 +986,107 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
   } catch (e) {
     res.status(400).json({ message: e.message, error: e });
   }
+});
+
+// Network connectivity test endpoint for debugging email timeouts
+router.get('/test-smtp-connection', async function (req, res, next) {
+  const testResults = {
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    tests: []
+  };
+
+  // Test 1: DNS Resolution
+  try {
+    const dns = require('dns').promises;
+    const start = Date.now();
+    const addresses = await dns.lookup('smtp.postmarkapp.com');
+    testResults.tests.push({
+      test: 'DNS Resolution',
+      status: 'SUCCESS',
+      duration: Date.now() - start,
+      result: addresses
+    });
+  } catch (error) {
+    testResults.tests.push({
+      test: 'DNS Resolution',
+      status: 'FAILED',
+      error: error.message
+    });
+  }
+
+  // Test 2: TCP Connection to SMTP port
+  const testTcpConnection = (host, port) => {
+    return new Promise((resolve, reject) => {
+      const start = Date.now();
+      const socket = new net.Socket();
+
+      socket.setTimeout(30000); // 30 second timeout
+
+      socket.on('connect', () => {
+        socket.destroy();
+        resolve({
+          test: `TCP Connection ${host}:${port}`,
+          status: 'SUCCESS',
+          duration: Date.now() - start
+        });
+      });
+
+      socket.on('timeout', () => {
+        socket.destroy();
+        reject({
+          test: `TCP Connection ${host}:${port}`,
+          status: 'TIMEOUT',
+          duration: Date.now() - start
+        });
+      });
+
+      socket.on('error', (err) => {
+        socket.destroy();
+        reject({
+          test: `TCP Connection ${host}:${port}`,
+          status: 'FAILED',
+          duration: Date.now() - start,
+          error: err.message
+        });
+      });
+
+      socket.connect(port, host);
+    });
+  };
+
+  // Test SMTP ports
+  const smtpTests = [
+    { host: 'smtp.postmarkapp.com', port: 587 },
+    { host: 'smtp.postmarkapp.com', port: 25 },
+    { host: 'smtp.postmarkapp.com', port: 2525 },
+    { host: 'google.com', port: 80 } // Control test
+  ];
+
+  for (const { host, port } of smtpTests) {
+    try {
+      const result = await testTcpConnection(host, port);
+      testResults.tests.push(result);
+    } catch (result) {
+      testResults.tests.push(result);
+    }
+  }
+
+  // Test 3: Environment Variables (current master structure)
+  testResults.environment_check = {
+    // Development (Mailtrap)
+    MAILTRAP_HOST: process.env.MAILTRAP_HOST || 'NOT_SET',
+    MAILTRAP_PORT: process.env.MAILTRAP_PORT || 'NOT_SET',
+    MAILTRAP_USERNAME: process.env.MAILTRAP_USERNAME ? 'SET' : 'NOT_SET',
+    MAILTRAP_PASSWORD: process.env.MAILTRAP_PASSWORD ? 'SET' : 'NOT_SET',
+    // Production (Postmark)
+    MAIL_HOST: process.env.MAIL_HOST || 'NOT_SET',
+    MAIL_PORT: process.env.MAIL_PORT || 'NOT_SET',
+    MAIL_USERNAME: process.env.MAIL_USERNAME ? 'SET' : 'NOT_SET',
+    MAIL_PASSWORD: process.env.MAIL_PASSWORD ? 'SET' : 'NOT_SET'
+  };
+
+  res.json(testResults);
 });
 
 module.exports = router;
