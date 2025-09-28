@@ -16,6 +16,7 @@ const Products = require('../../models/Products');
 
 const sendEmail = require('../../services/sendEmail');
 const translations = require('../../translations');
+const net = require('net');
 
 router.post('/', async function (req, res, next) {
   const data = req.body;
@@ -235,7 +236,13 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
   const { to } = req.body;
 
   try {
-    console.log('📧 Send order summary - Starting process');
+    console.log('📧 Send order summary - Starting process', {
+      applicationId: id,
+      recipientEmail: to,
+      timestamp: new Date().toISOString(),
+      memoryUsage: `${Math.round(process.memoryUsage().heapUsed/1024/1024)}MB`,
+      uptime: `${Math.round(process.uptime())}s`
+    });
 
     const dbStart = Date.now();
     const application = await Application.findById(id);
@@ -895,14 +902,28 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       });
     };
 
+    console.log('📧 Creating PDF...', {
+      itemsCount: items.length,
+      totalPrice: total,
+      timestamp: new Date().toISOString()
+    });
     const pdfFilePath = await createPDF(items, total);
-    // Check if the file exists
+
+    // Check if the file exists and log file info
     if (!fs.existsSync(pdfFilePath)) {
+      console.error('📧 PDF creation failed - file does not exist');
       return res.status(500).json({
         message:
           'Nie udało się utoworzyć pliku PDF. Skontaktuj się z administratorem',
       });
     }
+
+    const pdfStats = fs.statSync(pdfFilePath);
+    console.log('📧 PDF created successfully', {
+      filePath: pdfFilePath,
+      fileSize: `${Math.round(pdfStats.size / 1024)}KB`,
+      timestamp: new Date().toISOString()
+    });
     const emailOptions = {
       from: `DDGRO.EU <noreply@ddpedestals.eu>`,
       to: to,
@@ -989,6 +1010,11 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     };
 
     try {
+      console.log('📧 Preparing to send emails...', {
+        environment: process.env.NODE_ENV,
+        timestamp: new Date().toISOString()
+      });
+
       // development
       if (process.env.NODE_ENV === 'development') {
         const toDeveloperOptions = {
@@ -1042,13 +1068,32 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         };
 
         // Send both emails and wait for completion
-        await Promise.all([
-          sendEmail(emailOptions),
-          sendEmail(toDeveloperOptions),
-        ]);
+        console.log('📧 Sending development emails in parallel...');
+        const emailPromises = [
+          sendEmail(emailOptions).then(result => {
+            console.log('📧 Client email sent successfully (dev)');
+            return result;
+          }),
+          sendEmail(toDeveloperOptions).then(result => {
+            console.log('📧 Developer email sent successfully (dev)');
+            return result;
+          })
+        ];
+        await Promise.all(emailPromises);
       } else {
         // production
-        await Promise.all([sendEmail(emailOptions), sendEmail(toOwnerOptions)]);
+        console.log('📧 Sending production emails in parallel...');
+        const prodEmailPromises = [
+          sendEmail(emailOptions).then(result => {
+            console.log('📧 Client email sent successfully (prod)');
+            return result;
+          }),
+          sendEmail(toOwnerOptions).then(result => {
+            console.log('📧 Owner email sent successfully (prod)');
+            return result;
+          })
+        ];
+        await Promise.all(prodEmailPromises);
       }
     } finally {
       // Clean up the file after ALL emails are sent
@@ -1069,6 +1114,101 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     console.error('Error:', e.message, e.stack);
     res.status(400).json({ message: e.message, error: e });
   }
+});
+
+// Network connectivity test endpoint
+router.get('/test-smtp-connection', async function (req, res, next) {
+  const testResults = {
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    tests: []
+  };
+
+  // Test 1: DNS Resolution
+  try {
+    const dns = require('dns').promises;
+    const start = Date.now();
+    const addresses = await dns.lookup('smtp.postmarkapp.com');
+    testResults.tests.push({
+      test: 'DNS Resolution',
+      status: 'SUCCESS',
+      duration: Date.now() - start,
+      result: addresses
+    });
+  } catch (error) {
+    testResults.tests.push({
+      test: 'DNS Resolution',
+      status: 'FAILED',
+      error: error.message
+    });
+  }
+
+  // Test 2: TCP Connection to SMTP port
+  const testTcpConnection = (host, port) => {
+    return new Promise((resolve, reject) => {
+      const start = Date.now();
+      const socket = new net.Socket();
+
+      socket.setTimeout(30000); // 30 second timeout
+
+      socket.on('connect', () => {
+        socket.destroy();
+        resolve({
+          test: `TCP Connection ${host}:${port}`,
+          status: 'SUCCESS',
+          duration: Date.now() - start
+        });
+      });
+
+      socket.on('timeout', () => {
+        socket.destroy();
+        reject({
+          test: `TCP Connection ${host}:${port}`,
+          status: 'TIMEOUT',
+          duration: Date.now() - start
+        });
+      });
+
+      socket.on('error', (err) => {
+        socket.destroy();
+        reject({
+          test: `TCP Connection ${host}:${port}`,
+          status: 'FAILED',
+          duration: Date.now() - start,
+          error: err.message
+        });
+      });
+
+      socket.connect(port, host);
+    });
+  };
+
+  // Test SMTP ports
+  const smtpTests = [
+    { host: 'smtp.postmarkapp.com', port: 587 },
+    { host: 'smtp.postmarkapp.com', port: 25 },
+    { host: 'smtp.postmarkapp.com', port: 2525 },
+    { host: 'google.com', port: 80 } // Control test
+  ];
+
+  for (const { host, port } of smtpTests) {
+    try {
+      const result = await testTcpConnection(host, port);
+      testResults.tests.push(result);
+    } catch (result) {
+      testResults.tests.push(result);
+    }
+  }
+
+  // Test 3: Environment Variables
+  testResults.environment_check = {
+    MAIL_HOST: process.env.MAIL_HOST || 'NOT_SET',
+    MAIL_PORT: process.env.MAIL_PORT || 'NOT_SET',
+    MAIL_USERNAME: process.env.MAIL_USERNAME ? 'SET' : 'NOT_SET',
+    MAIL_PASSWORD: process.env.MAIL_PASSWORD ? 'SET' : 'NOT_SET'
+  };
+
+  res.json(testResults);
 });
 
 module.exports = router;
