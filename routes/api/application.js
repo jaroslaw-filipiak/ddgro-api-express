@@ -240,8 +240,10 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       applicationId: id,
       recipientEmail: to,
       timestamp: new Date().toISOString(),
-      memoryUsage: `${Math.round(process.memoryUsage().heapUsed/1024/1024)}MB`,
-      uptime: `${Math.round(process.uptime())}s`
+      memoryUsage: `${Math.round(
+        process.memoryUsage().heapUsed / 1024 / 1024,
+      )}MB`,
+      uptime: `${Math.round(process.uptime())}s`,
     });
 
     const dbStart = Date.now();
@@ -905,7 +907,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     console.log('📧 Creating PDF...', {
       itemsCount: items.length,
       totalPrice: total,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
     const pdfFilePath = await createPDF(items, total);
 
@@ -922,7 +924,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     console.log('📧 PDF created successfully', {
       filePath: pdfFilePath,
       fileSize: `${Math.round(pdfStats.size / 1024)}KB`,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
     const emailOptions = {
       from: `DDGRO.EU <noreply@ddpedestals.eu>`,
@@ -961,7 +963,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     // do właściciela zawsze po polsku przychodzi info
     const toOwnerOptions = {
       from: `DDGRO.EU <noreply@ddpedestals.eu>`,
-      to: 'jozef.baar@ddgro.eu',
+      to: 'info@j-filipiak.pl',
       subject: 'Informacja o nowym zamówieniu',
       template: 'order_ext',
       context: {
@@ -1012,14 +1014,14 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     try {
       console.log('📧 Preparing to send emails...', {
         environment: process.env.NODE_ENV,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
 
       // development
       if (process.env.NODE_ENV === 'development') {
         const toDeveloperOptions = {
           from: `DDGRO.EU <noreply@ddpedestals.eu>`,
-          to: 'joozef.baar@ddgro.eu',
+          to: 'info@j-filipiak.pl',
           subject: '[DEV] Informacja o nowym zamówieniu',
           template: 'order_ext',
           context: {
@@ -1070,28 +1072,28 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         // Send both emails and wait for completion
         console.log('📧 Sending development emails in parallel...');
         const emailPromises = [
-          sendEmail(emailOptions).then(result => {
+          sendEmail(emailOptions).then((result) => {
             console.log('📧 Client email sent successfully (dev)');
             return result;
           }),
-          sendEmail(toDeveloperOptions).then(result => {
+          sendEmail(toDeveloperOptions).then((result) => {
             console.log('📧 Developer email sent successfully (dev)');
             return result;
-          })
+          }),
         ];
         await Promise.all(emailPromises);
       } else {
         // production
         console.log('📧 Sending production emails in parallel...');
         const prodEmailPromises = [
-          sendEmail(emailOptions).then(result => {
+          sendEmail(emailOptions).then((result) => {
             console.log('📧 Client email sent successfully (prod)');
             return result;
           }),
-          sendEmail(toOwnerOptions).then(result => {
+          sendEmail(toOwnerOptions).then((result) => {
             console.log('📧 Owner email sent successfully (prod)');
             return result;
-          })
+          }),
         ];
         await Promise.all(prodEmailPromises);
       }
@@ -1121,7 +1123,7 @@ router.get('/test-smtp-connection', async function (req, res, next) {
   const testResults = {
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
-    tests: []
+    tests: [],
   };
 
   // Test 1: DNS Resolution
@@ -1133,13 +1135,13 @@ router.get('/test-smtp-connection', async function (req, res, next) {
       test: 'DNS Resolution',
       status: 'SUCCESS',
       duration: Date.now() - start,
-      result: addresses
+      result: addresses,
     });
   } catch (error) {
     testResults.tests.push({
       test: 'DNS Resolution',
       status: 'FAILED',
-      error: error.message
+      error: error.message,
     });
   }
 
@@ -1156,7 +1158,7 @@ router.get('/test-smtp-connection', async function (req, res, next) {
         resolve({
           test: `TCP Connection ${host}:${port}`,
           status: 'SUCCESS',
-          duration: Date.now() - start
+          duration: Date.now() - start,
         });
       });
 
@@ -1165,7 +1167,7 @@ router.get('/test-smtp-connection', async function (req, res, next) {
         reject({
           test: `TCP Connection ${host}:${port}`,
           status: 'TIMEOUT',
-          duration: Date.now() - start
+          duration: Date.now() - start,
         });
       });
 
@@ -1175,7 +1177,7 @@ router.get('/test-smtp-connection', async function (req, res, next) {
           test: `TCP Connection ${host}:${port}`,
           status: 'FAILED',
           duration: Date.now() - start,
-          error: err.message
+          error: err.message,
         });
       });
 
@@ -1188,7 +1190,7 @@ router.get('/test-smtp-connection', async function (req, res, next) {
     { host: 'smtp.postmarkapp.com', port: 587 },
     { host: 'smtp.postmarkapp.com', port: 25 },
     { host: 'smtp.postmarkapp.com', port: 2525 },
-    { host: 'google.com', port: 80 } // Control test
+    { host: 'google.com', port: 80 }, // Control test
   ];
 
   for (const { host, port } of smtpTests) {
@@ -1205,7 +1207,7 @@ router.get('/test-smtp-connection', async function (req, res, next) {
     MAIL_HOST: process.env.MAIL_HOST || 'NOT_SET',
     MAIL_PORT: process.env.MAIL_PORT || 'NOT_SET',
     MAIL_USERNAME: process.env.MAIL_USERNAME ? 'SET' : 'NOT_SET',
-    MAIL_PASSWORD: process.env.MAIL_PASSWORD ? 'SET' : 'NOT_SET'
+    MAIL_PASSWORD: process.env.MAIL_PASSWORD ? 'SET' : 'NOT_SET',
   };
 
   res.json(testResults);
