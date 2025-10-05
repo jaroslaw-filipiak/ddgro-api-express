@@ -300,14 +300,28 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     const zbiorcza_TP = createZBIORCZA_TP(application);
     const main_keys = Object.keys(zbiorcza_TP.main_keys);
 
+    // Get currency based on language
+    const getCurrency = (lang) => {
+      const languageCurrencyMap = {
+        pl: 'PLN',
+        en: 'USD',
+        de: 'EUR',
+        fr: 'EUR',
+        es: 'EUR',
+      };
+      return languageCurrencyMap[lang] || 'PLN';
+    };
+
+    const currency = getCurrency(applicationLang);
+
     const getPriceNet = (item) => {
       // Use language_currency_map to get correct currency
       if (item.price && item.language_currency_map) {
-        const currency =
+        const itemCurrency =
           item.language_currency_map[applicationLang] ||
           item.language_currency_map['pl'] ||
           'PLN';
-        return Number(item.price[currency]) || Number(item.price.PLN) || 0;
+        return Number(item.price[itemCurrency]) || Number(item.price.PLN) || 0;
       }
 
       // Fallback to PLN price if available
@@ -561,8 +575,21 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       }, 0)
       .toFixed(2);
 
-    // TODO: Tutaj based on lang
-    const total = new Intl.NumberFormat('pl-PL', {
+    // Format total price based on language/locale
+    const getLocale = (lang) => {
+      const localeMap = {
+        pl: 'pl-PL',
+        en: 'en-US',
+        de: 'de-DE',
+        fr: 'fr-FR',
+        es: 'es-ES',
+      };
+      return localeMap[lang] || 'pl-PL';
+    };
+
+    const locale = getLocale(applicationLang);
+
+    const total = new Intl.NumberFormat(locale, {
       style: 'decimal',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -814,7 +841,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                   body: [
                     [
                       { text: t.pdf.totalNetSum, style: 'totalLabel' },
-                      { text: total + ' PLN', style: 'totalAmount' },
+                      { text: total + ' ' + currency, style: 'totalAmount' },
                     ],
                   ],
                 },
