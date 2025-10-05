@@ -479,10 +479,26 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     }
 
     // Accumulate items from all series instead of overwriting
-    const spiralItems = addCountAndPriceToItems(items, 'spiral', zbiorcza_TP.main_keys);
-    const standardItems = addCountAndPriceToItems(items, 'standard', zbiorcza_TP.main_keys);
-    const maxItems = addCountAndPriceToItems(items, 'max', zbiorcza_TP.main_keys);
-    const raptorItems = addCountAndPriceToItems(items, 'raptor', zbiorcza_TP.main_keys);
+    const spiralItems = addCountAndPriceToItems(
+      items,
+      'spiral',
+      zbiorcza_TP.main_keys,
+    );
+    const standardItems = addCountAndPriceToItems(
+      items,
+      'standard',
+      zbiorcza_TP.main_keys,
+    );
+    const maxItems = addCountAndPriceToItems(
+      items,
+      'max',
+      zbiorcza_TP.main_keys,
+    );
+    const raptorItems = addCountAndPriceToItems(
+      items,
+      'raptor',
+      zbiorcza_TP.main_keys,
+    );
 
     items = [...spiralItems, ...standardItems, ...maxItems, ...raptorItems];
 
@@ -1057,7 +1073,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     // do właściciela zawsze po polsku przychodzi info
     const toOwnerOptions = {
       from: `DDGRO.EU <noreply@ddpedestals.eu>`,
-      to: 'info@j-filipiak.pl',
+      to: 'jozef.baar@ddgro.eu',
       subject: 'Informacja o nowym zamówieniu',
       template: 'order_ext',
       context: {
@@ -1115,7 +1131,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       if (process.env.NODE_ENV === 'development') {
         const toDeveloperOptions = {
           from: `DDGRO.EU <noreply@ddpedestals.eu>`,
-          to: 'info@j-filipiak.pl',
+          to: 'jozef.baar@ddgro.eu',
           subject: '[DEV] Informacja o nowym zamówieniu',
           template: 'order_ext',
           context: {
