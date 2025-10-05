@@ -42,9 +42,9 @@ async function sendEmail(emailOptions) {
   try {
     // Set up handlebars template engine
     const templateStart = Date.now();
-    const templatePath = path.resolve('./views/emails');
+    const templatePath = path.resolve('./templates/emails');
     const templateContent = fs.readFileSync(
-      path.join(templatePath, emailOptions.template + '.handlebars'),
+      path.join(templatePath, emailOptions.template + '.hbs'),
       'utf8',
     );
 
