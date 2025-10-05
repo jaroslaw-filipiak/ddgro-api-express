@@ -465,15 +465,25 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         return itemCount > 0;
       });
 
-      return filteredItems.map((item) => {
-        if (item.series === series) {
-          const count = Math.round(countObj[item.height_mm] || 0);
-          const priceNet = getPriceNet(item);
-          item.count = count;
-          item.total_price = (count * priceNet).toFixed(2);
+      // Deduplicate: keep only first item per height_mm for matching series
+      const seenHeights = new Set();
+      const dedupedItems = [];
+
+      filteredItems.forEach((item) => {
+        if (item.series?.toLowerCase() === series.toLowerCase()) {
+          if (!seenHeights.has(item.height_mm)) {
+            seenHeights.add(item.height_mm);
+            const count = Math.round(countObj[item.height_mm] || 0);
+            const priceNet = getPriceNet(item);
+            item.count = count;
+            item.total_price = (count * priceNet).toFixed(2);
+            dedupedItems.push(item);
+          }
+          // Skip duplicate items with same height_mm
         }
-        return item;
       });
+
+      return dedupedItems;
     }
 
     items = addCountAndPriceToItems(items, 'spiral', zbiorcza_TP.main_keys);
