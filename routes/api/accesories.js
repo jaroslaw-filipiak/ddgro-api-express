@@ -24,6 +24,13 @@ const Products = require('../../models/Products');
  * Accessories are identified by the 'AKCW-' prefix in their distance_code
  */
 
+/*
+ *
+ * { id: 110.041011 } => SBR 200x200x3 60pcs
+ * { id: 110.043011 } => SBR 220x220x3 60pcs
+ *
+ */
+
 router.get('/', async function (req, res, next) {
   try {
     const products = await Products.find({
@@ -57,7 +64,7 @@ router.get('/for-raptor', async function (req, res, next) {
  *
  */
 router.get('/for-standard', async function (req, res, next) {
-  const ids = [110.011031, 110.043011, 110.042011, 102.060111];
+  const ids = [110.011031, 110.042011, 102.060111, 110.041011];
 
   try {
     const products = await Products.find({
