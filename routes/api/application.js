@@ -210,12 +210,16 @@ router.get('/preview/:id', async function (req, res, next) {
     // Add additional accessories with full product data from database
     const additionalAccessories = application.additional_accessories || [];
     if (additionalAccessories.length > 0) {
-      const accessoryIds = additionalAccessories.map(acc => Number(acc.id));
-      const fullAccessories = await Products.find({ id: { $in: accessoryIds } });
+      const accessoryIds = additionalAccessories.map((acc) => Number(acc.id));
+      const fullAccessories = await Products.find({
+        id: { $in: accessoryIds },
+      });
 
       additionalAccessories.forEach((additionalAccessory) => {
         const count = Number(additionalAccessory.count) || 0;
-        const fullProduct = fullAccessories.find(p => p.id == additionalAccessory.id);
+        const fullProduct = fullAccessories.find(
+          (p) => p.id == additionalAccessory.id,
+        );
 
         if (fullProduct) {
           order.push({
@@ -239,32 +243,6 @@ router.get('/preview/:id', async function (req, res, next) {
       zbiorcza_TP: zbiorcza_TP,
       beforeDeduplicationOrder: beforeDeduplicationOrder,
     });
-  } catch (e) {
-    console.error('Error:', e.message, e.stack);
-    res.status(400).json({ message: e.message, error: e });
-  }
-});
-
-router.get('/preview-pdf/:id', async function (req, res, next) {
-  try {
-    const id = req.params.id;
-
-    // Find the application in the database
-    const application = await Application.findById(id);
-
-    if (!application) {
-      return res.status(404).json({ message: 'Nie znaleziono formularza!' });
-    }
-
-    // Read the HTML template file
-    const templatePath = path.join(
-      __dirname,
-      '../../templates/pdf/template2.html',
-    );
-    const template = await readFile(templatePath, 'utf8'); // Use the promisified `readFile`
-
-    // Send the template as raw HTML content
-    res.send(template); // Use send() instead of render()
   } catch (e) {
     console.error('Error:', e.message, e.stack);
     res.status(400).json({ message: e.message, error: e });
@@ -538,14 +516,16 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     const additionalAccessories = application.additional_accessories || [];
 
     // Fetch full product data for accessories from database
-    const accessoryIds = additionalAccessories.map(acc => Number(acc.id));
+    const accessoryIds = additionalAccessories.map((acc) => Number(acc.id));
     const fullAccessories = await Products.find({ id: { $in: accessoryIds } });
 
     additionalAccessories.forEach((additionalAccessory) => {
       const count = Number(additionalAccessory.count) || 0;
 
       // Find full product data from database
-      const fullProduct = fullAccessories.find(p => p.id == additionalAccessory.id);
+      const fullProduct = fullAccessories.find(
+        (p) => p.id == additionalAccessory.id,
+      );
 
       if (fullProduct) {
         const priceNet = getPriceNet(fullProduct);
