@@ -34,7 +34,9 @@ async function sendEmail(emailOptions) {
     attachmentCount: emailOptions.attachments?.length || 0,
     environment: process.env.NODE_ENV,
     timestamp: new Date().toISOString(),
-    memoryUsage: `${Math.round(process.memoryUsage().heapUsed/1024/1024)}MB`
+    memoryUsage: `${Math.round(
+      process.memoryUsage().heapUsed / 1024 / 1024,
+    )}MB`,
   });
 
   try {
@@ -57,7 +59,11 @@ async function sendEmail(emailOptions) {
     if (emailOptions.attachments && emailOptions.attachments.length > 0) {
       for (const attachment of emailOptions.attachments) {
         const fileSize = fs.statSync(attachment.path).size;
-        console.log(`📧 Processing attachment: ${attachment.filename} (${Math.round(fileSize / 1024)}KB)`);
+        console.log(
+          `📧 Processing attachment: ${attachment.filename} (${Math.round(
+            fileSize / 1024,
+          )}KB)`,
+        );
 
         // Read file as Buffer and convert to base64 for Nodemailer
         const content = await fs.promises.readFile(attachment.path);
@@ -69,7 +75,9 @@ async function sendEmail(emailOptions) {
         });
       }
     }
-    console.log(`📧 Attachments processed in ${Date.now() - attachmentStart}ms`);
+    console.log(
+      `📧 Attachments processed in ${Date.now() - attachmentStart}ms`,
+    );
 
     const msg = {
       to: emailOptions.to,
@@ -86,20 +94,22 @@ async function sendEmail(emailOptions) {
      */
 
     if (process.env.NODE_ENV === 'development') {
-      console.log('📧 Creating development transporter (Mailtrap)...', {
-        host: process.env.MAILTRAP_HOST,
-        port: process.env.MAILTRAP_PORT,
-        hasAuth: !!(process.env.MAILTRAP_USERNAME && process.env.MAILTRAP_PASSWORD),
-        timestamp: new Date().toISOString()
+      console.log('📧 Creating development transporter', {
+        host: process.env.DEV_MAIL_HOST,
+        port: process.env.DEV_MAIL_PORT,
+        hasAuth: !!(
+          process.env.DEV_MAIL_USERNAME && process.env.DEV_MAIL_PASSWORD
+        ),
+        timestamp: new Date().toISOString(),
       });
 
       const transporterStart = Date.now();
       const transporter = nodemailer.createTransport({
-        host: process.env.MAILTRAP_HOST,
-        port: process.env.MAILTRAP_PORT,
+        host: process.env.DEV_MAIL_HOST,
+        port: process.env.DEV_MAIL_PORT,
         auth: {
-          user: process.env.MAILTRAP_USERNAME,
-          pass: process.env.MAILTRAP_PASSWORD,
+          user: process.env.DEV_MAIL_USERNAME,
+          pass: process.env.DEV_MAIL_PASSWORD,
         },
         pool: true,
         maxConnections: 1,
@@ -109,7 +119,11 @@ async function sendEmail(emailOptions) {
         greetingTimeout: 30000,
         socketTimeout: 60000,
       });
-      console.log(`📧 Mailtrap transporter created in ${Date.now() - transporterStart}ms`);
+      console.log(
+        `📧 Development transporter created in ${
+          Date.now() - transporterStart
+        }ms`,
+      );
 
       console.log('📧 Sending development email...', {
         to: emailOptions.to,
@@ -117,7 +131,7 @@ async function sendEmail(emailOptions) {
         subject: emailOptions.subject,
         attachmentCount: attachments.length,
         htmlLength: htmlContent.length,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
       const sendStart = Date.now();
       const info = await transporter.sendMail({
@@ -129,7 +143,7 @@ async function sendEmail(emailOptions) {
       });
       console.log(`📧 Development email sent in ${Date.now() - sendStart}ms`);
 
-      return { message: `Email sent successfully via Mailtrap`, info };
+      return { message: `Email sent successfully via Development env`, info };
     }
 
     /*
@@ -142,7 +156,7 @@ async function sendEmail(emailOptions) {
       host: process.env.MAIL_HOST,
       port: process.env.MAIL_PORT,
       hasAuth: !!(process.env.MAIL_USERNAME && process.env.MAIL_PASSWORD),
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
 
     const transporterStart = Date.now();
@@ -158,10 +172,12 @@ async function sendEmail(emailOptions) {
       rateDelta: 1000,
       rateLimit: 5,
       connectionTimeout: 120000, // 2 minutes for Postmark
-      greetingTimeout: 60000,   // 1 minute for Postmark
-      socketTimeout: 120000,    // 2 minutes for Postmark
+      greetingTimeout: 60000, // 1 minute for Postmark
+      socketTimeout: 120000, // 2 minutes for Postmark
     });
-    console.log(`📧 Production transporter created in ${Date.now() - transporterStart}ms`);
+    console.log(
+      `📧 Production transporter created in ${Date.now() - transporterStart}ms`,
+    );
 
     console.log('📧 Sending production email...', {
       to: emailOptions.to,
@@ -169,7 +185,7 @@ async function sendEmail(emailOptions) {
       subject: emailOptions.subject,
       attachmentCount: attachments.length,
       htmlLength: htmlContent.length,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
     const sendStart = Date.now();
     const info = await transporter.sendMail({
@@ -181,11 +197,17 @@ async function sendEmail(emailOptions) {
     });
     console.log(`📧 Production email sent in ${Date.now() - sendStart}ms`);
 
-    console.log(`📧 Total email process completed in ${Date.now() - emailStart}ms`);
+    console.log(
+      `📧 Total email process completed in ${Date.now() - emailStart}ms`,
+    );
     return { message: `Email sent successfully via SMTP`, info };
   } catch (error) {
     console.error('📧 Failed to send email:', error);
-    console.error('📧 Email process failed after', Date.now() - emailStart, 'ms');
+    console.error(
+      '📧 Email process failed after',
+      Date.now() - emailStart,
+      'ms',
+    );
     if (error.response) {
       console.error('📧 Email error details:', error.response.body);
     }
@@ -199,9 +221,11 @@ async function sendEmail(emailOptions) {
         command: error.command,
         timeout: error.timeout,
         timestamp: new Date().toISOString(),
-        memoryUsage: `${Math.round(process.memoryUsage().heapUsed/1024/1024)}MB`,
+        memoryUsage: `${Math.round(
+          process.memoryUsage().heapUsed / 1024 / 1024,
+        )}MB`,
         uptime: `${Math.round(process.uptime())}s`,
-        environment: process.env.NODE_ENV
+        environment: process.env.NODE_ENV,
       });
     }
 
@@ -214,7 +238,7 @@ async function sendEmail(emailOptions) {
         command: error.command,
         host: process.env.MAIL_HOST,
         port: process.env.MAIL_PORT,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
     }
     throw error;
