@@ -478,10 +478,13 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       return dedupedItems;
     }
 
-    items = addCountAndPriceToItems(items, 'spiral', zbiorcza_TP.main_keys);
-    items = addCountAndPriceToItems(items, 'standard', zbiorcza_TP.main_keys);
-    items = addCountAndPriceToItems(items, 'max', zbiorcza_TP.main_keys);
-    items = addCountAndPriceToItems(items, 'raptor', zbiorcza_TP.main_keys);
+    // Accumulate items from all series instead of overwriting
+    const spiralItems = addCountAndPriceToItems(items, 'spiral', zbiorcza_TP.main_keys);
+    const standardItems = addCountAndPriceToItems(items, 'standard', zbiorcza_TP.main_keys);
+    const maxItems = addCountAndPriceToItems(items, 'max', zbiorcza_TP.main_keys);
+    const raptorItems = addCountAndPriceToItems(items, 'raptor', zbiorcza_TP.main_keys);
+
+    items = [...spiralItems, ...standardItems, ...maxItems, ...raptorItems];
 
     // Add products from application.products with full info
     const additionalProducts = application.products || [];
