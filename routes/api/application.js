@@ -180,15 +180,55 @@ router.get('/preview/:id', async function (req, res, next) {
       });
     };
 
-    const order = filterOrder(
+    let order = filterOrder(
       orderArr,
       parseInt(application.lowest),
       parseInt(application.highest),
     );
 
+    const beforeDeduplicationOrder = [...order];
+
     if (!Array.isArray(order)) {
       console.error('Expected order to be an array', order);
       throw new Error('Invalid order array');
+    }
+
+    // Deduplicate products by height_mm and series (keep only first occurrence)
+    const deduplicatedOrder = [];
+    const seenKeys = new Set();
+
+    order.forEach((item) => {
+      const key = `${item.series}-${item.height_mm}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        deduplicatedOrder.push(item);
+      }
+    });
+
+    order = deduplicatedOrder;
+
+    // Add additional accessories with full product data from database
+    const additionalAccessories = application.additional_accessories || [];
+    if (additionalAccessories.length > 0) {
+      const accessoryIds = additionalAccessories.map(acc => Number(acc.id));
+      const fullAccessories = await Products.find({ id: { $in: accessoryIds } });
+
+      additionalAccessories.forEach((additionalAccessory) => {
+        const count = Number(additionalAccessory.count) || 0;
+        const fullProduct = fullAccessories.find(p => p.id == additionalAccessory.id);
+
+        if (fullProduct) {
+          order.push({
+            ...fullProduct.toObject(),
+            count: count,
+          });
+        } else {
+          order.push({
+            ...additionalAccessory,
+            count: count,
+          });
+        }
+      });
     }
 
     // console.log('Filtered order:', order);
@@ -197,6 +237,7 @@ router.get('/preview/:id', async function (req, res, next) {
       order: order,
       application: application,
       zbiorcza_TP: zbiorcza_TP,
+      beforeDeduplicationOrder: beforeDeduplicationOrder,
     });
   } catch (e) {
     console.error('Error:', e.message, e.stack);
@@ -404,6 +445,20 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       parseInt(application.highest),
     );
 
+    // Deduplicate products by height_mm and series (keep only first occurrence)
+    const deduplicatedItems = [];
+    const seenKeys = new Set();
+
+    items.forEach((item) => {
+      const key = `${item.series}-${item.height_mm}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        deduplicatedItems.push(item);
+      }
+    });
+
+    items = deduplicatedItems;
+
     function addCountAndPriceToItems(items, series, countObj) {
       const filteredItems = items.filter((item) => {
         const itemCount = Math.round(countObj[item.height_mm] || 0);
@@ -457,15 +512,34 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
      */
 
     const additionalAccessories = application.additional_accessories || [];
+
+    // Fetch full product data for accessories from database
+    const accessoryIds = additionalAccessories.map(acc => Number(acc.id));
+    const fullAccessories = await Products.find({ id: { $in: accessoryIds } });
+
     additionalAccessories.forEach((additionalAccessory) => {
       const count = Number(additionalAccessory.count) || 0;
-      const priceNet = getPriceNet(additionalAccessory);
 
-      items.push({
-        ...additionalAccessory,
-        count: count,
-        total_price: (count * priceNet).toFixed(2),
-      });
+      // Find full product data from database
+      const fullProduct = fullAccessories.find(p => p.id == additionalAccessory.id);
+
+      if (fullProduct) {
+        const priceNet = getPriceNet(fullProduct);
+
+        items.push({
+          ...fullProduct.toObject(),
+          count: count,
+          total_price: (count * priceNet).toFixed(2),
+        });
+      } else {
+        // Fallback if product not found in database
+        const priceNet = getPriceNet(additionalAccessory);
+        items.push({
+          ...additionalAccessory,
+          count: count,
+          total_price: (count * priceNet).toFixed(2),
+        });
+      }
     });
 
     // Recalculate total price of the full order using rounded counts
