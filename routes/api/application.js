@@ -193,19 +193,56 @@ router.get('/preview/:id', async function (req, res, next) {
       throw new Error('Invalid order array');
     }
 
-    // Deduplicate products by height_mm and series (keep only first occurrence)
-    const deduplicatedOrder = [];
-    const seenKeys = new Set();
+    // Select correct product variant based on gap_between_slabs
+    // gap = 3mm -> select K3 or D3 variants
+    // gap = 5mm -> select K5 or D5 variants
+    const selectProductByGap = (products, gapValue) => {
+      const gapSuffix = gapValue === 3 ? '3' : '5'; // K3/D3 for 3mm, K5/D5 for 5mm
+      const selectedProducts = [];
+      const groupedByHeightAndSeries = {};
 
-    order.forEach((item) => {
-      const key = `${item.series}-${item.height_mm}`;
-      if (!seenKeys.has(key)) {
-        seenKeys.add(key);
-        deduplicatedOrder.push(item);
-      }
-    });
+      // Group products by height_mm and series
+      products.forEach((product) => {
+        const groupKey = `${product.series}-${product.height_mm}`;
+        if (!groupedByHeightAndSeries[groupKey]) {
+          groupedByHeightAndSeries[groupKey] = [];
+        }
+        groupedByHeightAndSeries[groupKey].push(product);
+      });
 
-    order = deduplicatedOrder;
+      // For each group, select the product matching gap_between_slabs
+      Object.values(groupedByHeightAndSeries).forEach((group) => {
+        if (group.length === 1) {
+          // Only one product in this height/series group - use it
+          selectedProducts.push(group[0]);
+        } else {
+          // Multiple products - select based on gap_between_slabs
+          // Check key field (e.g., "030-045 K3 100pcs") or distance_code (e.g., "STA-030-045-K3-(100)")
+          const matchingProduct = group.find((product) => {
+            const key = product.key || '';
+            const distanceCode = product.distance_code || '';
+            const searchText = `${key} ${distanceCode}`.toUpperCase();
+
+            // Look for K3/D3 (3mm) or K5/D5 (5mm) in the product identifiers
+            return searchText.includes(`K${gapSuffix}`) || searchText.includes(`D${gapSuffix}`);
+          });
+
+          if (matchingProduct) {
+            selectedProducts.push(matchingProduct);
+          } else {
+            // No match found - use first product as fallback
+            console.warn(
+              `No matching product found for gap=${gapValue}mm in group ${group[0].series}-${group[0].height_mm}. Using first product as fallback.`
+            );
+            selectedProducts.push(group[0]);
+          }
+        }
+      });
+
+      return selectedProducts;
+    };
+
+    order = selectProductByGap(order, application.gap_between_slabs || 3);
 
     // Add additional accessories with full product data from database
     const additionalAccessories = application.additional_accessories || [];
@@ -437,45 +474,74 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       parseInt(application.highest),
     );
 
-    // Deduplicate products by height_mm and series (keep only first occurrence)
-    const deduplicatedItems = [];
-    const seenKeys = new Set();
+    // Select correct product variant based on gap_between_slabs
+    // gap = 3mm -> select K3 or D3 variants
+    // gap = 5mm -> select K5 or D5 variants
+    const selectProductByGap = (products, gapValue) => {
+      const gapSuffix = gapValue === 3 ? '3' : '5'; // K3/D3 for 3mm, K5/D5 for 5mm
+      const selectedProducts = [];
+      const groupedByHeightAndSeries = {};
 
-    items.forEach((item) => {
-      const key = `${item.series}-${item.height_mm}`;
-      if (!seenKeys.has(key)) {
-        seenKeys.add(key);
-        deduplicatedItems.push(item);
-      }
-    });
-
-    items = deduplicatedItems;
-
-    function addCountAndPriceToItems(items, series, countObj) {
-      const filteredItems = items.filter((item) => {
-        const itemCount = Math.round(countObj[item.height_mm] || 0);
-        return itemCount > 0;
+      // Group products by height_mm and series
+      products.forEach((product) => {
+        const groupKey = `${product.series}-${product.height_mm}`;
+        if (!groupedByHeightAndSeries[groupKey]) {
+          groupedByHeightAndSeries[groupKey] = [];
+        }
+        groupedByHeightAndSeries[groupKey].push(product);
       });
 
-      // Deduplicate: keep only first item per height_mm for matching series
-      const seenHeights = new Set();
-      const dedupedItems = [];
+      // For each group, select the product matching gap_between_slabs
+      Object.values(groupedByHeightAndSeries).forEach((group) => {
+        if (group.length === 1) {
+          // Only one product in this height/series group - use it
+          selectedProducts.push(group[0]);
+        } else {
+          // Multiple products - select based on gap_between_slabs
+          // Check key field (e.g., "030-045 K3 100pcs") or distance_code (e.g., "STA-030-045-K3-(100)")
+          const matchingProduct = group.find((product) => {
+            const key = product.key || '';
+            const distanceCode = product.distance_code || '';
+            const searchText = `${key} ${distanceCode}`.toUpperCase();
 
-      filteredItems.forEach((item) => {
-        if (item.series?.toLowerCase() === series.toLowerCase()) {
-          if (!seenHeights.has(item.height_mm)) {
-            seenHeights.add(item.height_mm);
-            const count = Math.round(countObj[item.height_mm] || 0);
-            const priceNet = getPriceNet(item);
-            item.count = count;
-            item.total_price = (count * priceNet).toFixed(2);
-            dedupedItems.push(item);
+            // Look for K3/D3 (3mm) or K5/D5 (5mm) in the product identifiers
+            return searchText.includes(`K${gapSuffix}`) || searchText.includes(`D${gapSuffix}`);
+          });
+
+          if (matchingProduct) {
+            selectedProducts.push(matchingProduct);
+          } else {
+            // No match found - use first product as fallback
+            console.warn(
+              `No matching product found for gap=${gapValue}mm in group ${group[0].series}-${group[0].height_mm}. Using first product as fallback.`
+            );
+            selectedProducts.push(group[0]);
           }
-          // Skip duplicate items with same height_mm
         }
       });
 
-      return dedupedItems;
+      return selectedProducts;
+    };
+
+    items = selectProductByGap(items, application.gap_between_slabs || 3);
+
+    function addCountAndPriceToItems(items, series, countObj) {
+      // Filter items by series and count > 0, then add pricing info
+      // Note: items are already filtered by selectProductByGap above, so no deduplication needed here
+      return items
+        .filter((item) => {
+          const itemCount = Math.round(countObj[item.height_mm] || 0);
+          return itemCount > 0 && item.series?.toLowerCase() === series.toLowerCase();
+        })
+        .map((item) => {
+          const count = Math.round(countObj[item.height_mm] || 0);
+          const priceNet = getPriceNet(item);
+          return {
+            ...item,
+            count: count,
+            total_price: (count * priceNet).toFixed(2),
+          };
+        });
     }
 
     // Accumulate items from all series instead of overwriting
