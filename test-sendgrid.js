@@ -10,7 +10,7 @@ async function testSendGrid() {
 
   const emailOptions = {
     to: 'info@j-filipiak.pl', // Real test email
-    from: 'DDGRO.EU <contact@ddgro.eu>',
+    from: 'DDGRO.EU <noreply@ddpedestals.eu>',
     subject: '[TEST] SendGrid Integration Test - DDGRO',
     template: 'order_pl', // Using Polish template for test
     context: {
