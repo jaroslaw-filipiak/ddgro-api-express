@@ -50,42 +50,49 @@ router.get('/preview/:id', async function (req, res, next) {
 
     // console.log('main_keys', main_keys);
 
-    const createPipeline = (series, values) => [
-      {
-        $match: {
-          height_mm: { $in: main_keys },
-          type: application.type,
-          series: { $regex: new RegExp(`^${series}$`, 'i') }, // case-insensitive match
+    const createPipeline = (series, values) => {
+      // If main_keys is empty, return empty pipeline that will return no results
+      if (!main_keys || main_keys.length === 0) {
+        return [{ $match: { _id: null } }]; // Match nothing
+      }
+
+      return [
+        {
+          $match: {
+            height_mm: { $in: main_keys },
+            type: application.type,
+            series: { $regex: new RegExp(`^${series}$`, 'i') }, // case-insensitive match
+          },
         },
-      },
-      {
-        $addFields: {
-          sortKey: {
-            $switch: {
-              branches: main_keys.map((key, index) => ({
-                case: { $eq: ['$height_mm', key] },
-                then: index,
-              })),
-              default: main_keys.length, // Ensures any unmatched documents appear last
+        {
+          $addFields: {
+            sortKey: {
+              $switch: {
+                branches: main_keys.map((key, index) => ({
+                  case: { $eq: ['$height_mm', key] },
+                  then: index,
+                })),
+                default: main_keys.length, // Ensures any unmatched documents appear last
+              },
+            },
+            count: {
+              $arrayElemAt: [
+                values,
+                {
+                  $indexOfArray: [main_keys, '$height_mm'],
+                },
+              ],
             },
           },
-          count: {
-            $arrayElemAt: [
-              values,
-              {
-                $indexOfArray: [main_keys, '$height_mm'],
-              },
-            ],
-          },
         },
-      },
-      {
-        $sort: { sortKey: 1 },
-      },
-      {
-        $project: { sortKey: 0 }, // Remove the sortKey field from the final output
-      },
-    ];
+        {
+          $sort: { sortKey: 1 },
+        },
+        {
+          $project: { sortKey: 0 }, // Remove the sortKey field from the final output
+        },
+      ];
+    };
 
     const products_spiral =
       (await Products.aggregate(
@@ -224,7 +231,10 @@ router.get('/preview/:id', async function (req, res, next) {
             const searchText = `${key} ${distanceCode}`.toUpperCase();
 
             // Look for K3/D3 (3mm) or K5/D5 (5mm) in the product identifiers
-            return searchText.includes(`K${gapSuffix}`) || searchText.includes(`D${gapSuffix}`);
+            return (
+              searchText.includes(`K${gapSuffix}`) ||
+              searchText.includes(`D${gapSuffix}`)
+            );
           });
 
           if (matchingProduct) {
@@ -232,7 +242,7 @@ router.get('/preview/:id', async function (req, res, next) {
           } else {
             // No match found - use first product as fallback
             console.warn(
-              `No matching product found for gap=${gapValue}mm in group ${group[0].series}-${group[0].height_mm}. Using first product as fallback.`
+              `No matching product found for gap=${gapValue}mm in group ${group[0].series}-${group[0].height_mm}. Using first product as fallback.`,
             );
             selectedProducts.push(group[0]);
           }
@@ -347,42 +357,49 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       return 0;
     };
 
-    const createPipeline = (series, values, heightKeys) => [
-      {
-        $match: {
-          height_mm: { $in: heightKeys },
-          type: application.type,
-          series: { $regex: new RegExp(`^${series}$`, 'i') },
+    const createPipeline = (series, values, heightKeys) => {
+      // If heightKeys is empty, return empty pipeline that will return no results
+      if (!heightKeys || heightKeys.length === 0) {
+        return [{ $match: { _id: null } }]; // Match nothing
+      }
+
+      return [
+        {
+          $match: {
+            height_mm: { $in: heightKeys },
+            type: application.type,
+            series: { $regex: new RegExp(`^${series}$`, 'i') },
+          },
         },
-      },
-      {
-        $addFields: {
-          sortKey: {
-            $switch: {
-              branches: heightKeys.map((key, index) => ({
-                case: { $eq: ['$height_mm', key] },
-                then: index,
-              })),
-              default: heightKeys.length,
+        {
+          $addFields: {
+            sortKey: {
+              $switch: {
+                branches: heightKeys.map((key, index) => ({
+                  case: { $eq: ['$height_mm', key] },
+                  then: index,
+                })),
+                default: heightKeys.length,
+              },
+            },
+            count: {
+              $arrayElemAt: [
+                values,
+                {
+                  $indexOfArray: [heightKeys, '$height_mm'],
+                },
+              ],
             },
           },
-          count: {
-            $arrayElemAt: [
-              values,
-              {
-                $indexOfArray: [heightKeys, '$height_mm'],
-              },
-            ],
-          },
         },
-      },
-      {
-        $sort: { sortKey: 1 },
-      },
-      {
-        $project: { sortKey: 0 },
-      },
-    ];
+        {
+          $sort: { sortKey: 1 },
+        },
+        {
+          $project: { sortKey: 0 },
+        },
+      ];
+    };
 
     const products_spiral = await Products.aggregate(
       createPipeline(
@@ -505,7 +522,10 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
             const searchText = `${key} ${distanceCode}`.toUpperCase();
 
             // Look for K3/D3 (3mm) or K5/D5 (5mm) in the product identifiers
-            return searchText.includes(`K${gapSuffix}`) || searchText.includes(`D${gapSuffix}`);
+            return (
+              searchText.includes(`K${gapSuffix}`) ||
+              searchText.includes(`D${gapSuffix}`)
+            );
           });
 
           if (matchingProduct) {
@@ -513,7 +533,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           } else {
             // No match found - use first product as fallback
             console.warn(
-              `No matching product found for gap=${gapValue}mm in group ${group[0].series}-${group[0].height_mm}. Using first product as fallback.`
+              `No matching product found for gap=${gapValue}mm in group ${group[0].series}-${group[0].height_mm}. Using first product as fallback.`,
             );
             selectedProducts.push(group[0]);
           }
@@ -531,7 +551,9 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       return items
         .filter((item) => {
           const itemCount = Math.round(countObj[item.height_mm] || 0);
-          return itemCount > 0 && item.series?.toLowerCase() === series.toLowerCase();
+          return (
+            itemCount > 0 && item.series?.toLowerCase() === series.toLowerCase()
+          );
         })
         .map((item) => {
           const count = Math.round(countObj[item.height_mm] || 0);
@@ -1103,7 +1125,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       timestamp: new Date().toISOString(),
     });
     const emailOptions = {
-      from: `DDGRO.EU <noreply@ddpedestals.eu>`,
+      from: `DDGRO.EU <contact@ddgro.eu>`,
       to: to,
       subject: `${
         process.env.NODE_ENV === 'development'
@@ -1138,9 +1160,14 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     };
     // do właściciela zawsze po polsku przychodzi info
     const toOwnerOptions = {
-      from: `DDGRO.EU <noreply@ddpedestals.eu>`,
-      to: 'jozef.baar@ddgro.eu',
-      subject: 'Informacja o nowym zamówieniu',
+      from: `DDGRO.EU <contact@ddgro.eu>`,
+      to:
+        process.env.NODE_ENV === 'development'
+          ? 'info@j-filipiak.pl'
+          : 'jozef.baar@ddgro.eu',
+      subject: `${
+        process.env.NODE_ENV === 'development' ? '[DEV]' : ''
+      } Informacja o nowym zamówieniu`,
       template: 'order_ext',
       context: {
         // Original data
@@ -1196,8 +1223,8 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       // development
       if (process.env.NODE_ENV === 'development') {
         const toDeveloperOptions = {
-          from: `DDGRO.EU <noreply@ddpedestals.eu>`,
-          to: 'jozef.baar@ddgro.eu',
+          from: `DDGRO.EU <contact@ddgro.eu>`,
+          to: 'info@j-filipiak.pl',
           subject: '[DEV] Informacja o nowym zamówieniu',
           template: 'order_ext',
           context: {
