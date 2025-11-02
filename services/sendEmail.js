@@ -126,6 +126,16 @@ async function sendEmail(emailOptions) {
       htmlLength: htmlContent.length,
       environment: process.env.NODE_ENV,
       timestamp: new Date().toISOString(),
+      apiKeyPrefix: process.env.SENDGRID_API_KEY?.substring(0, 10) + '...',
+    });
+
+    // Log the exact message being sent for debugging
+    console.log('📧 SendGrid message structure:', {
+      to: sendGridMsg.to,
+      from: sendGridMsg.from,
+      subject: sendGridMsg.subject,
+      hasHtml: !!sendGridMsg.html,
+      attachmentCount: sendGridMsg.attachments?.length || 0,
     });
 
     const sendStart = Date.now();
@@ -156,6 +166,7 @@ async function sendEmail(emailOptions) {
       console.error('📧 SendGrid API error details:', {
         statusCode: error.code,
         body: error.response.body,
+        errors: error.response.body.errors,
         headers: error.response.headers,
         timestamp: new Date().toISOString(),
         environment: process.env.NODE_ENV,
@@ -163,6 +174,32 @@ async function sendEmail(emailOptions) {
           process.memoryUsage().heapUsed / 1024 / 1024,
         )}MB`,
       });
+      // Log detailed error messages
+      if (
+        error.response.body.errors &&
+        Array.isArray(error.response.body.errors)
+      ) {
+        console.error('📧 SendGrid error messages:');
+        error.response.body.errors.forEach((err, index) => {
+          console.error(
+            `  ${index + 1}. ${err.message || JSON.stringify(err)}`,
+          );
+          // Log field if present (often tells us which field has the issue)
+          if (err.field) {
+            console.error(`     Field: ${err.field}`);
+          }
+          // Log help link if present
+          if (err.help) {
+            console.error(`     Help: ${err.help}`);
+          }
+        });
+      }
+      // Log the from address that failed for debugging
+      console.error('📧 Failed "from" address:', emailOptions.from);
+      console.error(
+        '📧 Used API key prefix:',
+        process.env.SENDGRID_API_KEY?.substring(0, 10) + '...',
+      );
     } else {
       // Log other errors
       console.error('📧 Email service error:', {

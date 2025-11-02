@@ -1160,7 +1160,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     };
     // do właściciela zawsze po polsku przychodzi info
     const toOwnerOptions = {
-      from: `DDGRO.EU <noreply@ddpedestals.eu>`,
+      from: `DDGRO.EU <contact@ddgro.eu>`,
       to:
         process.env.NODE_ENV === 'development'
           ? 'info@j-filipiak.pl'
@@ -1223,7 +1223,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       // development
       if (process.env.NODE_ENV === 'development') {
         const toDeveloperOptions = {
-          from: `DDGRO.EU <noreply@ddpedestals.eu>`,
+          from: `DDGRO.EU <contact@ddgro.eu>`,
           to: 'info@j-filipiak.pl',
           subject: '[DEV] Informacja o nowym zamówieniu',
           template: 'order_ext',
