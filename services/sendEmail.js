@@ -1,4 +1,4 @@
-const sgMail = require('@sendgrid/mail');
+const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
 const handlebars = require('handlebars');
@@ -97,9 +97,7 @@ async function sendEmail(emailOptions) {
 
     const initStart = Date.now();
     sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-    console.log(
-      `📧 SendGrid API initialized in ${Date.now() - initStart}ms`,
-    );
+    console.log(`📧 SendGrid API initialized in ${Date.now() - initStart}ms`);
 
     // Prepare SendGrid message
     const sendGridMsg = {
