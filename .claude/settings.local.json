@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:localhost)",
+      "Bash(npm run dev:*)",
+      "Bash(curl:*)",
+      "Bash(pkill:*)",
+      "Bash(netstat:*)",
+      "Bash(node:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

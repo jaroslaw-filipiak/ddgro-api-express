@@ -1,6 +1,4 @@
-const express = require('express');
 const mongoose = require('mongoose');
-const { create } = require('./Products');
 
 const ApplicationSchema = new mongoose.Schema({
   created_at: {
@@ -76,6 +74,7 @@ const ApplicationSchema = new mongoose.Schema({
   supports_count: {
     type: Number,
   },
+  // TODO: to trzeba zmienić na additional_products ponieważ nazwa jest myląca
   products: {
     type: Array,
   },
@@ -96,6 +95,10 @@ const ApplicationSchema = new mongoose.Schema({
   },
   m_raptor: {
     type: Array,
+  },
+  // lang
+  lang: {
+    type: String,
   },
 });
 

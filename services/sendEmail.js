@@ -42,9 +42,9 @@ async function sendEmail(emailOptions) {
   try {
     // Set up handlebars template engine
     const templateStart = Date.now();
-    const templatePath = path.resolve('./views/emails');
+    const templatePath = path.resolve('./templates/emails');
     const templateContent = fs.readFileSync(
-      path.join(templatePath, emailOptions.template + '.handlebars'),
+      path.join(templatePath, emailOptions.template + '.hbs'),
       'utf8',
     );
 
@@ -65,7 +65,7 @@ async function sendEmail(emailOptions) {
           )}KB)`,
         );
 
-        // Read file as Buffer and convert to base64 for Nodemailer
+        // Read file as Buffer and convert to base64 for SendGrid
         const content = await fs.promises.readFile(attachment.path);
         attachments.push({
           filename: attachment.filename,
@@ -79,128 +79,69 @@ async function sendEmail(emailOptions) {
       `📧 Attachments processed in ${Date.now() - attachmentStart}ms`,
     );
 
-    const msg = {
+    /*
+     *  ======================
+     *  SendGrid API (All Environments)
+     *  ======================
+     */
+
+    console.log('📧 Initializing SendGrid API...', {
+      environment: process.env.NODE_ENV,
+      hasApiKey: !!process.env.SENDGRID_API_KEY,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (!process.env.SENDGRID_API_KEY) {
+      throw new Error('SENDGRID_API_KEY is not configured');
+    }
+
+    const initStart = Date.now();
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    console.log(`📧 SendGrid API initialized in ${Date.now() - initStart}ms`);
+
+    // Prepare SendGrid message
+    const sendGridMsg = {
       to: emailOptions.to,
       from: emailOptions.from,
       subject: emailOptions.subject,
       html: htmlContent,
-      attachments: attachments,
     };
 
-    /*
-     *  ======================
-     *  DEVELOPMENT
-     *  ======================
-     */
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log('📧 Creating development transporter', {
-        host: process.env.DEV_MAIL_HOST,
-        port: process.env.DEV_MAIL_PORT,
-        hasAuth: !!(
-          process.env.DEV_MAIL_USERNAME && process.env.DEV_MAIL_PASSWORD
-        ),
-        timestamp: new Date().toISOString(),
-      });
-
-      const transporterStart = Date.now();
-      const transporter = nodemailer.createTransport({
-        host: process.env.DEV_MAIL_HOST,
-        port: process.env.DEV_MAIL_PORT,
-        auth: {
-          user: process.env.DEV_MAIL_USERNAME,
-          pass: process.env.DEV_MAIL_PASSWORD,
-        },
-        pool: true,
-        maxConnections: 1,
-        rateDelta: 1000,
-        rateLimit: 5,
-        connectionTimeout: 60000,
-        greetingTimeout: 30000,
-        socketTimeout: 60000,
-      });
-      console.log(
-        `📧 Development transporter created in ${
-          Date.now() - transporterStart
-        }ms`,
-      );
-
-      console.log('📧 Sending development email...', {
-        to: emailOptions.to,
-        from: emailOptions.from,
-        subject: emailOptions.subject,
-        attachmentCount: attachments.length,
-        htmlLength: htmlContent.length,
-        timestamp: new Date().toISOString(),
-      });
-      const sendStart = Date.now();
-      const info = await transporter.sendMail({
-        to: emailOptions.to,
-        from: emailOptions.from,
-        subject: emailOptions.subject,
-        html: htmlContent,
-        attachments: attachments,
-      });
-      console.log(`📧 Development email sent in ${Date.now() - sendStart}ms`);
-
-      return { message: `Email sent successfully via Development env`, info };
+    // Add attachments if present
+    if (attachments.length > 0) {
+      sendGridMsg.attachments = attachments.map((attachment) => ({
+        content: attachment.content,
+        filename: attachment.filename,
+        type: attachment.contentType,
+        disposition: 'attachment',
+      }));
     }
 
-    /*
-     *  ======================
-     *  PRODUCTION
-     *  ======================
-     */
-
-    console.log('📧 Creating production transporter (Postmark)...', {
-      host: process.env.MAIL_HOST,
-      port: process.env.MAIL_PORT,
-      hasAuth: !!(process.env.MAIL_USERNAME && process.env.MAIL_PASSWORD),
-      timestamp: new Date().toISOString(),
-    });
-
-    const transporterStart = Date.now();
-    const transporter = nodemailer.createTransport({
-      host: process.env.MAIL_HOST,
-      port: process.env.MAIL_PORT,
-      auth: {
-        user: process.env.MAIL_USERNAME,
-        pass: process.env.MAIL_PASSWORD,
-      },
-      pool: true,
-      maxConnections: 1,
-      rateDelta: 1000,
-      rateLimit: 5,
-      connectionTimeout: 120000, // 2 minutes for Postmark
-      greetingTimeout: 60000, // 1 minute for Postmark
-      socketTimeout: 120000, // 2 minutes for Postmark
-    });
-    console.log(
-      `📧 Production transporter created in ${Date.now() - transporterStart}ms`,
-    );
-
-    console.log('📧 Sending production email...', {
+    console.log('📧 Sending email via SendGrid API...', {
       to: emailOptions.to,
       from: emailOptions.from,
       subject: emailOptions.subject,
       attachmentCount: attachments.length,
       htmlLength: htmlContent.length,
+      environment: process.env.NODE_ENV,
       timestamp: new Date().toISOString(),
     });
+
     const sendStart = Date.now();
-    const info = await transporter.sendMail({
-      to: emailOptions.to,
-      from: emailOptions.from,
-      subject: emailOptions.subject,
-      html: htmlContent,
-      attachments: attachments,
+    const response = await sgMail.send(sendGridMsg);
+    console.log(`📧 Email sent in ${Date.now() - sendStart}ms`);
+    console.log('📧 SendGrid response:', {
+      statusCode: response[0].statusCode,
+      messageId: response[0].headers['x-message-id'],
     });
-    console.log(`📧 Production email sent in ${Date.now() - sendStart}ms`);
 
     console.log(
       `📧 Total email process completed in ${Date.now() - emailStart}ms`,
     );
-    return { message: `Email sent successfully via SMTP`, info };
+    return {
+      message: `Email sent successfully via SendGrid API`,
+      info: response[0],
+    };
   } catch (error) {
     console.error('📧 Failed to send email:', error);
     console.error(
@@ -208,37 +149,27 @@ async function sendEmail(emailOptions) {
       Date.now() - emailStart,
       'ms',
     );
-    if (error.response) {
-      console.error('📧 Email error details:', error.response.body);
-    }
 
-    // Log connection-specific errors with comprehensive details
-    if (error.code === 'ETIMEDOUT') {
-      console.error('📧 Connection timeout details:', {
-        host: process.env.MAIL_HOST,
-        port: process.env.MAIL_PORT,
-        code: error.code,
-        command: error.command,
-        timeout: error.timeout,
+    // Log SendGrid API specific errors
+    if (error.response && error.response.body) {
+      console.error('📧 SendGrid API error details:', {
+        statusCode: error.code,
+        body: error.response.body,
+        headers: error.response.headers,
         timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV,
         memoryUsage: `${Math.round(
           process.memoryUsage().heapUsed / 1024 / 1024,
         )}MB`,
-        uptime: `${Math.round(process.uptime())}s`,
-        environment: process.env.NODE_ENV,
       });
-    }
-
-    // Log other email-specific errors
-    if (error.code) {
-      console.error('📧 SMTP Error details:', {
+    } else {
+      // Log other errors
+      console.error('📧 Email service error:', {
         code: error.code,
-        response: error.response,
-        responseCode: error.responseCode,
-        command: error.command,
-        host: process.env.MAIL_HOST,
-        port: process.env.MAIL_PORT,
+        message: error.message,
+        stack: error.stack?.split('\n')[0],
         timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV,
       });
     }
     throw error;

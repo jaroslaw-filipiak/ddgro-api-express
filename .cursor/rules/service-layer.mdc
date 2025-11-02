@@ -1,0 +1,573 @@
+---
+globs: *.js
+description: Service layer patterns for business logic and external integrations
+---
+
+# Service Layer Patterns
+
+## Service Structure
+
+Follow the pattern from [services/](mdc:services/) directory:
+
+### Email Service Pattern
+
+Based on [services/sendEmail.js](mdc:services/sendEmail.js):
+
+```javascript
+const nodemailer = require('nodemailer');
+const fs = require('fs');
+const path = require('path');
+const handlebars = require('handlebars');
+
+// Register Handlebars helpers
+handlebars.registerHelper('eq', function (a, b) {
+  return a === b;
+});
+
+handlebars.registerHelper('getTypeName', function (type) {
+  return type === 'slab' ? 'Płyty' : 'Deski';
+});
+
+// Main service function
+async function sendEmail(emailOptions) {
+  try {
+    // Service implementation
+    return { message: 'Email sent successfully', info };
+  } catch (error) {
+    console.error('Failed to send email:', error);
+    throw error;
+  }
+}
+
+module.exports = sendEmail;
+```
+
+## Template Processing Patterns
+
+### Handlebars Template Integration
+
+```javascript
+// Template compilation
+const templatePath = path.resolve('./templates/emails');
+const templateContent = fs.readFileSync(
+  path.join(templatePath, emailOptions.template + '.hbs'),
+  'utf8',
+);
+
+const template = handlebars.compile(templateContent);
+const htmlContent = template(emailOptions.context);
+```
+
+### Custom Handlebars Helpers
+
+```javascript
+// Boolean comparison helper
+handlebars.registerHelper('eq', function (a, b) {
+  return a === b;
+});
+
+// Type mapping helper
+handlebars.registerHelper('getTypeName', function (type) {
+  return type === 'slab' ? 'Płyty' : 'Deski';
+});
+
+// Support type description helper
+handlebars.registerHelper('getSupportTypeDescription', function (supportType) {
+  switch (supportType) {
+    case 'type1':
+      return 'Podparcie po bokach';
+    case 'type2':
+      return 'Podparcie po bokach + wspornik na środku';
+    case 'type3':
+      return 'Podparcie po bokach, układ przestawny';
+    case 'type4':
+      return 'Podparcie po bokach, układ przestawny + wspornik na środku';
+    default:
+      return supportType || 'Nie określono';
+  }
+});
+
+// Formatting helpers
+handlebars.registerHelper(
+  'formatCurrency',
+  function (amount, currency = 'PLN') {
+    return new Intl.NumberFormat('pl-PL', {
+      style: 'currency',
+      currency: currency,
+    }).format(amount);
+  },
+);
+
+handlebars.registerHelper('formatDate', function (date) {
+  return new Date(date).toLocaleDateString('pl-PL');
+});
+```
+
+## Environment-Based Configuration
+
+### Development vs Production Setup
+
+```javascript
+async function sendEmail(emailOptions) {
+  try {
+    // Prepare message
+    const msg = {
+      to: emailOptions.to,
+      from: emailOptions.from,
+      subject: emailOptions.subject,
+      html: htmlContent,
+      attachments: attachments,
+    };
+
+    // Development configuration
+    if (process.env.NODE_ENV === 'development') {
+      const transporter = nodemailer.createTransporter({
+        host: process.env.MAILTRAP_HOST,
+        port: process.env.MAILTRAP_PORT,
+        auth: {
+          user: process.env.MAILTRAP_USERNAME,
+          pass: process.env.MAILTRAP_PASSWORD,
+        },
+        pool: true,
+        maxConnections: 1,
+        rateDelta: 1000,
+        rateLimit: 5,
+      });
+
+      const info = await transporter.sendMail(msg);
+      return { message: 'Email sent successfully via Mailtrap', info };
+    }
+
+    // Production configuration
+    const transporter = nodemailer.createTransporter({
+      host: process.env.MAIL_HOST,
+      port: process.env.MAIL_PORT,
+      auth: {
+        user: process.env.MAIL_USERNAME,
+        pass: process.env.MAIL_PASSWORD,
+      },
+      pool: true,
+      maxConnections: 1,
+      rateDelta: 1000,
+      rateLimit: 5,
+    });
+
+    const info = await transporter.sendMail(msg);
+    return { message: 'Email sent successfully via SMTP', info };
+  } catch (error) {
+    console.error('Failed to send email:', error);
+    if (error.response) {
+      console.error('Email error details:', error.response.body);
+    }
+    throw error;
+  }
+}
+```
+
+## File Attachment Handling
+
+### Attachment Processing
+
+```javascript
+// Prepare attachments
+const attachments = [];
+if (emailOptions.attachments && emailOptions.attachments.length > 0) {
+  for (const attachment of emailOptions.attachments) {
+    // Read file as Buffer and convert to base64
+    const content = await fs.promises.readFile(attachment.path);
+    attachments.push({
+      filename: attachment.filename,
+      content: content.toString('base64'),
+      contentType: attachment.contentType,
+      encoding: 'base64',
+    });
+  }
+}
+```
+
+### PDF Generation Service Pattern
+
+```javascript
+const puppeteer = require('puppeteer');
+const path = require('path');
+const fs = require('fs');
+
+class PDFService {
+  static async generateFromTemplate(templatePath, data, options = {}) {
+    let browser;
+
+    try {
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      });
+
+      const page = await browser.newPage();
+
+      // Load template
+      const templateContent = fs.readFileSync(templatePath, 'utf8');
+      const template = handlebars.compile(templateContent);
+      const html = template(data);
+
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '1cm', bottom: '1cm', left: '1cm', right: '1cm' },
+        ...options,
+      });
+
+      return pdfBuffer;
+    } catch (error) {
+      console.error('PDF generation failed:', error);
+      throw error;
+    } finally {
+      if (browser) {
+        await browser.close();
+      }
+    }
+  }
+
+  static async saveToFile(buffer, filePath) {
+    await fs.promises.writeFile(filePath, buffer);
+    return filePath;
+  }
+}
+
+module.exports = PDFService;
+```
+
+## Data Processing Services
+
+### Utility Service Pattern
+
+Based on [utils/create-zbiorcza-tp.js](mdc:utils/create-zbiorcza-tp.js):
+
+```javascript
+const mongoose = require('mongoose');
+const Products = require('../models/Products');
+
+// Helper functions
+const summary = (items, keysToKeep) => {
+  const grouped = items.reduce((acc, item) => {
+    if (!acc[item.range]) {
+      acc[item.range] = [];
+    }
+    acc[item.range].push(item);
+    return acc;
+  }, {});
+
+  const summary = Object.entries(grouped).reduce((acc, [range, items]) => {
+    const total = items.reduce((sum, item) => sum + item.count_in_range, 0);
+    acc[range] = total;
+    return acc;
+  }, {});
+
+  return summary;
+};
+
+// Main processing function
+const createZBIORCZA_TP = (application) => {
+  const m_spiral_sum = summary(application.m_spiral);
+  const m_standard_sum = summary(application.m_standard);
+  const m_max_sum = summary(application.m_max);
+  const m_raptor_sum = summary(application.m_raptor);
+
+  // Clean empty ranges
+  delete m_spiral_sum[''];
+
+  // Determine main keys based on system
+  let main_keys = '';
+  switch (application.main_system) {
+    case 'spiral':
+      main_keys = m_spiral_sum;
+      break;
+    case 'standard':
+      main_keys = m_standard_sum;
+      break;
+    case 'max':
+      main_keys = m_max_sum;
+      break;
+    case 'raptor':
+      main_keys = m_raptor_sum;
+      break;
+  }
+
+  return {
+    main_keys: main_keys,
+    m_spiral: m_spiral_sum,
+    m_standard: m_standard_sum,
+    m_max: m_max_sum,
+    m_raptor: m_raptor_sum,
+  };
+};
+
+module.exports = { createZBIORCZA_TP };
+```
+
+## External API Integration
+
+### Generic API Service
+
+```javascript
+class APIService {
+  constructor(baseURL, apiKey = null) {
+    this.baseURL = baseURL;
+    this.apiKey = apiKey;
+    this.defaultHeaders = {
+      'Content-Type': 'application/json',
+      ...(apiKey && { Authorization: `Bearer ${apiKey}` }),
+    };
+  }
+
+  async request(method, endpoint, data = null) {
+    const url = `${this.baseURL}${endpoint}`;
+    const config = {
+      method,
+      headers: this.defaultHeaders,
+    };
+
+    if (data) {
+      config.body = JSON.stringify(data);
+    }
+
+    try {
+      const response = await fetch(url, config);
+
+      if (!response.ok) {
+        throw new Error(
+          `API Error: ${response.status} - ${response.statusText}`,
+        );
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error(`API request failed: ${method} ${url}`, error);
+      throw error;
+    }
+  }
+
+  async get(endpoint) {
+    return this.request('GET', endpoint);
+  }
+
+  async post(endpoint, data) {
+    return this.request('POST', endpoint, data);
+  }
+
+  async put(endpoint, data) {
+    return this.request('PUT', endpoint, data);
+  }
+
+  async delete(endpoint) {
+    return this.request('DELETE', endpoint);
+  }
+}
+
+module.exports = APIService;
+```
+
+## Translation Service
+
+### Internationalization Service
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+class TranslationService {
+  constructor() {
+    this.translations = new Map();
+    this.defaultLanguage = 'pl';
+    this.supportedLanguages = ['pl', 'en', 'de', 'fr', 'es'];
+  }
+
+  async loadTranslations() {
+    const translationsDir = path.join(__dirname, '../translations');
+
+    for (const lang of this.supportedLanguages) {
+      try {
+        const filePath = path.join(translationsDir, `${lang}.json`);
+        const content = await fs.promises.readFile(filePath, 'utf8');
+        this.translations.set(lang, JSON.parse(content));
+      } catch (error) {
+        console.warn(`Failed to load translations for ${lang}:`, error.message);
+      }
+    }
+  }
+
+  translate(key, language = this.defaultLanguage, params = {}) {
+    const langTranslations =
+      this.translations.get(language) ||
+      this.translations.get(this.defaultLanguage);
+
+    if (!langTranslations) {
+      return key;
+    }
+
+    // Support nested keys like 'form.validation.required'
+    const value = key.split('.').reduce((obj, k) => obj?.[k], langTranslations);
+
+    if (!value) {
+      return key;
+    }
+
+    // Replace parameters in translation
+    return Object.entries(params).reduce((text, [param, value]) => {
+      return text.replace(new RegExp(`{{${param}}}`, 'g'), value);
+    }, value);
+  }
+
+  getAvailableLanguages() {
+    return this.supportedLanguages;
+  }
+}
+
+module.exports = new TranslationService();
+```
+
+## Database Service Patterns
+
+### Repository Pattern
+
+```javascript
+class BaseRepository {
+  constructor(model) {
+    this.model = model;
+  }
+
+  async findById(id) {
+    return await this.model.findById(id);
+  }
+
+  async findOne(filter) {
+    return await this.model.findOne(filter);
+  }
+
+  async findMany(filter = {}, options = {}) {
+    const { limit, skip, sort } = options;
+
+    let query = this.model.find(filter);
+
+    if (limit) query = query.limit(limit);
+    if (skip) query = query.skip(skip);
+    if (sort) query = query.sort(sort);
+
+    return await query;
+  }
+
+  async create(data) {
+    const document = new this.model(data);
+    return await document.save();
+  }
+
+  async update(id, updates) {
+    return await this.model.findByIdAndUpdate(id, updates, {
+      new: true,
+      runValidators: true,
+    });
+  }
+
+  async delete(id) {
+    return await this.model.findByIdAndDelete(id);
+  }
+
+  async count(filter = {}) {
+    return await this.model.countDocuments(filter);
+  }
+}
+
+// Usage
+const ProductRepository = new BaseRepository(require('../models/Products'));
+module.exports = { ProductRepository };
+```
+
+## Service Error Handling
+
+### Custom Service Errors
+
+```javascript
+class ServiceError extends Error {
+  constructor(message, type = 'SERVICE_ERROR', statusCode = 500) {
+    super(message);
+    this.type = type;
+    this.statusCode = statusCode;
+    this.name = 'ServiceError';
+  }
+}
+
+class ValidationError extends ServiceError {
+  constructor(message, field = null) {
+    super(message, 'VALIDATION_ERROR', 400);
+    this.field = field;
+    this.name = 'ValidationError';
+  }
+}
+
+class NotFoundError extends ServiceError {
+  constructor(resource = 'Resource') {
+    super(`${resource} not found`, 'NOT_FOUND', 404);
+    this.name = 'NotFoundError';
+  }
+}
+
+module.exports = { ServiceError, ValidationError, NotFoundError };
+```
+
+### Service Error Handler
+
+```javascript
+const handleServiceError = (error, req, res, next) => {
+  if (error instanceof ServiceError) {
+    return res.status(error.statusCode).json({
+      success: false,
+      error: error.message,
+      type: error.type,
+      ...(error.field && { field: error.field }),
+    });
+  }
+
+  // Default error handling
+  console.error('Unhandled service error:', error);
+  res.status(500).json({
+    success: false,
+    error: 'Internal server error',
+  });
+};
+
+module.exports = handleServiceError;
+```
+
+## Service Testing Patterns
+
+### Service Unit Tests
+
+```javascript
+const emailService = require('../services/sendEmail');
+
+describe('Email Service', () => {
+  it('should send email successfully', async () => {
+    const emailOptions = {
+      to: 'test@example.com',
+      from: 'sender@example.com',
+      subject: 'Test Email',
+      template: 'test',
+      context: { name: 'Test User' },
+    };
+
+    const result = await emailService(emailOptions);
+
+    expect(result.message).toContain('Email sent successfully');
+    expect(result.info).toBeDefined();
+  });
+
+  it('should handle email sending errors', async () => {
+    const invalidOptions = { to: 'invalid-email' };
+
+    await expect(emailService(invalidOptions)).rejects.toThrow(
+      'Failed to send email',
+    );
+  });
+});
+```

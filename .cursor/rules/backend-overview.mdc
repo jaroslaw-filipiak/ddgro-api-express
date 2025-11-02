@@ -1,0 +1,292 @@
+---
+alwaysApply: true
+---
+
+# Backend Project Overview
+
+## Project Architecture
+
+**DDGRO Backend** - Express.js API server for terrace calculation and management system
+
+### Technology Stack
+
+- **Runtime**: Node.js with Express.js framework
+- **Database**: MongoDB with Mongoose ODM
+- **Authentication**: Passport.js with JWT strategy
+- **Email**: Nodemailer with Handlebars templating
+- **PDF Generation**: Puppeteer for PDF creation
+- **Environment**: Environment-based configuration
+
+## Directory Structure
+
+### Core Application Files
+
+- **[app.js](mdc:app.js)** - Main Express application setup and configuration
+- **[bin/www](mdc:bin/www)** - Server startup script
+
+### API Routes
+
+- **[routes/index.js](mdc:routes/index.js)** - Root routes
+- **[routes/api/](mdc:routes/api/)** - API endpoint routes
+  - **[routes/api/application.js](mdc:routes/api/application.js)** - Form submission and PDF generation
+  - **[routes/api/products.js](mdc:routes/api/products.js)** - Product management endpoints
+  - **[routes/api/accesories.js](mdc:routes/api/accesories.js)** - Accessory management endpoints
+  - **[routes/api/users.js](mdc:routes/api/users.js)** - User management endpoints
+  - **[routes/api/auth.js](mdc:routes/api/auth.js)** - Authentication endpoints
+
+### Data Models
+
+- **[models/](mdc:models/)** - MongoDB/Mongoose model definitions
+  - **[models/Application.js](mdc:models/Application.js)** - Form submission data model
+  - **[models/Products.js](mdc:models/Products.js)** - Product catalog with multilingual support
+  - **[models/Accessories.js](mdc:models/Accessories.js)** - Accessory catalog model
+
+### Business Logic Services
+
+- **[services/](mdc:services/)** - Service layer for business logic
+  - **[services/sendEmail.js](mdc:services/sendEmail.js)** - Email service with template processing
+
+### Template System
+
+- **[templates/](mdc:templates/)** - Handlebars template files
+  - **[templates/emails/](mdc:templates/emails/)** - Email templates by language (order_pl.hbs, order_en.hbs, etc.)
+  - **[templates/pdf/](mdc:templates/pdf/)** - PDF generation templates
+
+### Utility Functions
+
+- **[utils/](mdc:utils/)** - Helper functions and utilities
+  - **[utils/create-zbiorcza-tp.js](mdc:utils/create-zbiorcza-tp.js)** - Data processing utilities
+
+### Configuration
+
+- **[config/](mdc:config/)** - Application configuration files
+  - **[config/passport.js](mdc:config/passport.js)** - Passport.js authentication configuration
+
+### Database Management
+
+- **[migrations/](mdc:migrations/)** - Database migration scripts
+
+### Internationalization
+
+- **[translations/](mdc:translations/)** - Backend translation files for multilingual support
+
+### Static Assets
+
+- **[public/](mdc:public/)** - Static files and assets
+  - **[public/fonts/](mdc:public/fonts/)** - Font files for PDF generation
+  - **[public/images/](mdc:public/images/)** - Images and logos
+
+### Temporary Files
+
+- **[temp/](mdc:temp/)** - Temporary file storage for PDF generation and processing
+
+## Data Flow Architecture
+
+### Form Submission Workflow
+
+1. **API Request** → [routes/api/application.js](mdc:routes/api/application.js)
+2. **Data Validation** → Express route handlers
+3. **Database Storage** → [models/Application.js](mdc:models/Application.js)
+4. **PDF Generation** → [templates/pdf/](mdc:templates/pdf/) + Puppeteer
+5. **Email Notification** → [services/sendEmail.js](mdc:services/sendEmail.js)
+6. **Template Processing** → [templates/emails/](mdc:templates/emails/)
+
+### Product Management Flow
+
+1. **API Request** → [routes/api/products.js](mdc:routes/api/products.js)
+2. **Model Operations** → [models/Products.js](mdc:models/Products.js)
+3. **Multilingual Support** → Built-in localization methods
+4. **Response Formatting** → JSON API responses
+
+### Authentication Flow
+
+1. **Login Request** → [routes/api/auth.js](mdc:routes/api/auth.js)
+2. **Strategy Processing** → [config/passport.js](mdc:config/passport.js)
+3. **JWT Generation** → User model methods
+4. **Protected Routes** → Passport middleware
+
+## Development Patterns
+
+### Express.js Routing
+
+Follow patterns from [Express Routing Rules](.cursor/rules/express-routing.mdc):
+
+- Async/await error handling with try-catch
+- Consistent response format: `{ success: boolean, data: any, message?: string }`
+- Proper HTTP status codes and error responses
+- Route-level middleware for authentication and validation
+
+### MongoDB Models
+
+Follow patterns from [Mongoose Models Rules](.cursor/rules/mongoose-models.mdc):
+
+- Complex schema validation and custom field types
+- Multilingual field support with default language fallback
+- Instance methods for business logic and formatting
+- Static methods for query helpers and aggregations
+- Pre/post hooks for data processing
+
+### Service Layer
+
+Follow patterns from [Service Layer Rules](.cursor/rules/service-layer.mdc):
+
+- Environment-based configuration (development vs production)
+- Template compilation and caching
+- External API integration patterns
+- Error handling and logging
+
+### Templates
+
+Follow patterns from [Template Patterns Rules](.cursor/rules/template-patterns.mdc):
+
+- Handlebars templates with custom helpers
+- Language-specific email templates
+- PDF generation with HTML templates
+- Dynamic content with context data
+
+### Authentication
+
+Follow patterns from [Auth Security Rules](.cursor/rules/auth-security.mdc):
+
+- Passport.js with JWT and Local strategies
+- Role-based access control
+- Password hashing and validation
+- Rate limiting and security headers
+
+### Configuration
+
+Follow patterns from [Config Environment Rules](.cursor/rules/config-environment.mdc):
+
+- Environment-based configuration loading
+- Configuration validation on startup
+- Dynamic CORS setup
+- Centralized configuration management
+
+## API Endpoints
+
+### Public Endpoints
+
+- `GET /api/products` - Get product catalog
+- `GET /api/accesories` - Get accessory catalog
+- `POST /api/application` - Submit terrace calculation form
+
+### Authentication Endpoints
+
+- `POST /api/auth/login` - User login
+- `POST /api/auth/register` - User registration (admin only)
+- `GET /api/auth/me` - Get current user
+
+### Protected Endpoints
+
+- `PUT /api/products/:id` - Update product (admin only)
+- `GET /api/application/preview/:id` - Get application preview
+- `POST /api/application/generate-pdf` - Generate PDF from application
+
+## Environment Configuration
+
+### Required Environment Variables
+
+```bash
+# Database
+MONGODB_URI=mongodb://localhost:27017/ddgro
+
+# Authentication
+JWT_SECRET=your-jwt-secret-key
+
+# Email (Development)
+MAILTRAP_HOST=smtp.mailtrap.io
+MAILTRAP_USERNAME=your-username
+MAILTRAP_PASSWORD=your-password
+
+# Email (Production)
+MAIL_HOST=smtp.gmail.com
+MAIL_USERNAME=your-email@gmail.com
+MAIL_PASSWORD=your-app-password
+
+# Application
+NODE_ENV=development|production
+PORT=3001
+```
+
+### Development Setup
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+
+# Start production server
+npm start
+```
+
+## Key Features
+
+### Multilingual Support
+
+- Product catalog in 5 languages (pl, en, de, fr, es)
+- Email templates per language
+- Automatic language detection and fallback
+
+### PDF Generation
+
+- Dynamic PDF creation from HTML templates
+- Custom styling and layout
+- Automated file generation and delivery
+
+### Email System
+
+- Template-based email composition
+- Environment-specific email providers
+- Attachment support and inline images
+
+### Data Processing
+
+- Complex terrace calculations
+- Product and accessory management
+- User preference handling
+
+### Security
+
+- JWT-based authentication
+- Rate limiting and CORS protection
+- Input validation and sanitization
+- Password hashing and account lockout
+
+## Integration Points
+
+### Frontend Integration
+
+- RESTful API endpoints for form submission
+- Product and accessory data endpoints
+- PDF generation and download endpoints
+
+### External Services
+
+- Email delivery (Mailtrap/SMTP)
+- File storage and management
+- Authentication and authorization
+
+## Monitoring and Logging
+
+### Health Checks
+
+- Database connectivity
+- Email service availability
+- External API status
+
+### Error Handling
+
+- Centralized error middleware
+- Environment-specific error reporting
+- Request logging and monitoring
+
+For specific implementation details, refer to the specialized rule files:
+
+- [Express Routing](.cursor/rules/express-routing.mdc)
+- [Mongoose Models](.cursor/rules/mongoose-models.mdc)
+- [Service Layer](.cursor/rules/service-layer.mdc)
+- [Template Patterns](.cursor/rules/template-patterns.mdc)
+- [Auth Security](.cursor/rules/auth-security.mdc)
+- [Config Environment](.cursor/rules/config-environment.mdc)

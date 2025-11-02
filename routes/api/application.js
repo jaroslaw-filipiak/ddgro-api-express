@@ -13,9 +13,9 @@ const puppeteer = require('puppeteer');
 
 const { createZBIORCZA_TP } = require('../../utils/create-zbiorcza-tp');
 const Products = require('../../models/Products');
-const Accessories = require('../../models/Accessories');
 
 const sendEmail = require('../../services/sendEmail');
+const translations = require('../../translations');
 const net = require('net');
 
 router.post('/', async function (req, res, next) {
@@ -25,12 +25,13 @@ router.post('/', async function (req, res, next) {
     const application = await Application.create(data);
     application.save();
 
-    res.json(201, {
-      message: `Otzymaliśmy formularz... przygotowywanie do wysłania PDF`,
+    res.status(201).json({
+      message: `Application created successfully`,
       id: application._id,
+      lang: application.lang,
     });
   } catch (e) {
-    res.json(400, { message: e, error: e });
+    res.status(400).json({ message: e, error: e });
   }
 });
 
@@ -49,42 +50,49 @@ router.get('/preview/:id', async function (req, res, next) {
 
     // console.log('main_keys', main_keys);
 
-    const createPipeline = (series, values) => [
-      {
-        $match: {
-          height_mm: { $in: main_keys },
-          type: application.type,
-          series: series,
+    const createPipeline = (series, values) => {
+      // If main_keys is empty, return empty pipeline that will return no results
+      if (!main_keys || main_keys.length === 0) {
+        return [{ $match: { _id: null } }]; // Match nothing
+      }
+
+      return [
+        {
+          $match: {
+            height_mm: { $in: main_keys },
+            type: application.type,
+            series: { $regex: new RegExp(`^${series}$`, 'i') }, // case-insensitive match
+          },
         },
-      },
-      {
-        $addFields: {
-          sortKey: {
-            $switch: {
-              branches: main_keys.map((key, index) => ({
-                case: { $eq: ['$height_mm', key] },
-                then: index,
-              })),
-              default: main_keys.length, // Ensures any unmatched documents appear last
+        {
+          $addFields: {
+            sortKey: {
+              $switch: {
+                branches: main_keys.map((key, index) => ({
+                  case: { $eq: ['$height_mm', key] },
+                  then: index,
+                })),
+                default: main_keys.length, // Ensures any unmatched documents appear last
+              },
+            },
+            count: {
+              $arrayElemAt: [
+                values,
+                {
+                  $indexOfArray: [main_keys, '$height_mm'],
+                },
+              ],
             },
           },
-          count: {
-            $arrayElemAt: [
-              values,
-              {
-                $indexOfArray: [main_keys, '$height_mm'],
-              },
-            ],
-          },
         },
-      },
-      {
-        $sort: { sortKey: 1 },
-      },
-      {
-        $project: { sortKey: 0 }, // Remove the sortKey field from the final output
-      },
-    ];
+        {
+          $sort: { sortKey: 1 },
+        },
+        {
+          $project: { sortKey: 0 }, // Remove the sortKey field from the final output
+        },
+      ];
+    };
 
     const products_spiral =
       (await Products.aggregate(
@@ -179,15 +187,99 @@ router.get('/preview/:id', async function (req, res, next) {
       });
     };
 
-    const order = filterOrder(
+    let order = filterOrder(
       orderArr,
       parseInt(application.lowest),
       parseInt(application.highest),
     );
 
+    const beforeDeduplicationOrder = [...order];
+
     if (!Array.isArray(order)) {
       console.error('Expected order to be an array', order);
       throw new Error('Invalid order array');
+    }
+
+    // Select correct product variant based on gap_between_slabs
+    // gap = 3mm -> select K3 or D3 variants
+    // gap = 5mm -> select K5 or D5 variants
+    const selectProductByGap = (products, gapValue) => {
+      const gapSuffix = gapValue === 3 ? '3' : '5'; // K3/D3 for 3mm, K5/D5 for 5mm
+      const selectedProducts = [];
+      const groupedByHeightAndSeries = {};
+
+      // Group products by height_mm and series
+      products.forEach((product) => {
+        const groupKey = `${product.series}-${product.height_mm}`;
+        if (!groupedByHeightAndSeries[groupKey]) {
+          groupedByHeightAndSeries[groupKey] = [];
+        }
+        groupedByHeightAndSeries[groupKey].push(product);
+      });
+
+      // For each group, select the product matching gap_between_slabs
+      Object.values(groupedByHeightAndSeries).forEach((group) => {
+        if (group.length === 1) {
+          // Only one product in this height/series group - use it
+          selectedProducts.push(group[0]);
+        } else {
+          // Multiple products - select based on gap_between_slabs
+          // Check key field (e.g., "030-045 K3 100pcs") or distance_code (e.g., "STA-030-045-K3-(100)")
+          const matchingProduct = group.find((product) => {
+            const key = product.key || '';
+            const distanceCode = product.distance_code || '';
+            const searchText = `${key} ${distanceCode}`.toUpperCase();
+
+            // Look for K3/D3 (3mm) or K5/D5 (5mm) in the product identifiers
+            return (
+              searchText.includes(`K${gapSuffix}`) ||
+              searchText.includes(`D${gapSuffix}`)
+            );
+          });
+
+          if (matchingProduct) {
+            selectedProducts.push(matchingProduct);
+          } else {
+            // No match found - use first product as fallback
+            console.warn(
+              `No matching product found for gap=${gapValue}mm in group ${group[0].series}-${group[0].height_mm}. Using first product as fallback.`,
+            );
+            selectedProducts.push(group[0]);
+          }
+        }
+      });
+
+      return selectedProducts;
+    };
+
+    order = selectProductByGap(order, application.gap_between_slabs || 3);
+
+    // Add additional accessories with full product data from database
+    const additionalAccessories = application.additional_accessories || [];
+    if (additionalAccessories.length > 0) {
+      const accessoryIds = additionalAccessories.map((acc) => Number(acc.id));
+      const fullAccessories = await Products.find({
+        id: { $in: accessoryIds },
+      });
+
+      additionalAccessories.forEach((additionalAccessory) => {
+        const count = Number(additionalAccessory.count) || 0;
+        const fullProduct = fullAccessories.find(
+          (p) => p.id == additionalAccessory.id,
+        );
+
+        if (fullProduct) {
+          order.push({
+            ...fullProduct.toObject(),
+            count: count,
+          });
+        } else {
+          order.push({
+            ...additionalAccessory,
+            count: count,
+          });
+        }
+      });
     }
 
     // console.log('Filtered order:', order);
@@ -196,6 +288,7 @@ router.get('/preview/:id', async function (req, res, next) {
       order: order,
       application: application,
       zbiorcza_TP: zbiorcza_TP,
+      beforeDeduplicationOrder: beforeDeduplicationOrder,
     });
   } catch (e) {
     console.error('Error:', e.message, e.stack);
@@ -203,38 +296,27 @@ router.get('/preview/:id', async function (req, res, next) {
   }
 });
 
-router.get('/preview-pdf/:id', async function (req, res, next) {
-  try {
-    const id = req.params.id;
-
-    // Find the application in the database
-    const application = await Application.findById(id);
-
-    if (!application) {
-      return res.status(404).json({ message: 'Nie znaleziono formularza!' });
-    }
-
-    // Read the HTML template file
-    const templatePath = path.join(
-      __dirname,
-      '../../templates/pdf/template2.html',
-    );
-    const template = await readFile(templatePath, 'utf8'); // Use the promisified `readFile`
-
-    // Send the template as raw HTML content
-    res.send(template); // Use send() instead of render()
-  } catch (e) {
-    console.error('Error:', e.message, e.stack);
-    res.status(400).json({ message: e.message, error: e });
-  }
-});
-
 router.post('/send-order-summary/:id', async function (req, res, next) {
+  const startTime = Date.now();
   const id = req.params.id;
   const { to } = req.body;
 
   try {
+    console.log('📧 Send order summary - Starting process', {
+      applicationId: id,
+      recipientEmail: to,
+      timestamp: new Date().toISOString(),
+      memoryUsage: `${Math.round(
+        process.memoryUsage().heapUsed / 1024 / 1024,
+      )}MB`,
+      uptime: `${Math.round(process.uptime())}s`,
+    });
+
+    const dbStart = Date.now();
     const application = await Application.findById(id);
+    const applicationLang = application.lang || 'pl';
+
+    const t = translations[applicationLang] || translations.pl || {};
 
     if (!application) {
       return res.status(404).json({ message: 'Nie znaleziono formularza!' });
@@ -243,54 +325,109 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     const zbiorcza_TP = createZBIORCZA_TP(application);
     const main_keys = Object.keys(zbiorcza_TP.main_keys);
 
-    const createPipeline = (series, values) => [
-      {
-        $match: {
-          height_mm: { $in: main_keys },
-          type: application.type,
-          series: series,
+    // Get currency based on language
+    const getCurrency = (lang) => {
+      const languageCurrencyMap = {
+        pl: 'PLN',
+        en: 'USD',
+        de: 'EUR',
+        fr: 'EUR',
+        es: 'EUR',
+      };
+      return languageCurrencyMap[lang] || 'PLN';
+    };
+
+    const currency = getCurrency(applicationLang);
+
+    const getPriceNet = (item) => {
+      // Use language_currency_map to get correct currency
+      if (item.price && item.language_currency_map) {
+        const itemCurrency =
+          item.language_currency_map[applicationLang] ||
+          item.language_currency_map['pl'] ||
+          'PLN';
+        return Number(item.price[itemCurrency]) || Number(item.price.PLN) || 0;
+      }
+
+      // Fallback to PLN price if available
+      if (item.price && item.price.PLN) {
+        return Number(item.price.PLN) || 0;
+      }
+
+      return 0;
+    };
+
+    const createPipeline = (series, values, heightKeys) => {
+      // If heightKeys is empty, return empty pipeline that will return no results
+      if (!heightKeys || heightKeys.length === 0) {
+        return [{ $match: { _id: null } }]; // Match nothing
+      }
+
+      return [
+        {
+          $match: {
+            height_mm: { $in: heightKeys },
+            type: application.type,
+            series: { $regex: new RegExp(`^${series}$`, 'i') },
+          },
         },
-      },
-      {
-        $addFields: {
-          sortKey: {
-            $switch: {
-              branches: main_keys.map((key, index) => ({
-                case: { $eq: ['$height_mm', key] },
-                then: index,
-              })),
-              default: main_keys.length, // Ensures any unmatched documents appear last
+        {
+          $addFields: {
+            sortKey: {
+              $switch: {
+                branches: heightKeys.map((key, index) => ({
+                  case: { $eq: ['$height_mm', key] },
+                  then: index,
+                })),
+                default: heightKeys.length,
+              },
+            },
+            count: {
+              $arrayElemAt: [
+                values,
+                {
+                  $indexOfArray: [heightKeys, '$height_mm'],
+                },
+              ],
             },
           },
-          count: {
-            $arrayElemAt: [
-              values,
-              {
-                $indexOfArray: [main_keys, '$height_mm'],
-              },
-            ],
-          },
         },
-      },
-      {
-        $sort: { sortKey: 1 },
-      },
-      {
-        $project: { sortKey: 0 }, // Remove the sortKey field from the final output
-      },
-    ];
+        {
+          $sort: { sortKey: 1 },
+        },
+        {
+          $project: { sortKey: 0 },
+        },
+      ];
+    };
 
     const products_spiral = await Products.aggregate(
-      createPipeline('spiral', Object.values(zbiorcza_TP.m_spiral)),
+      createPipeline(
+        'spiral',
+        Object.values(zbiorcza_TP.m_spiral),
+        Object.keys(zbiorcza_TP.m_spiral),
+      ),
     );
     const products_standard = await Products.aggregate(
-      createPipeline('standard', Object.values(zbiorcza_TP.m_standard)),
+      createPipeline(
+        'standard',
+        Object.values(zbiorcza_TP.m_standard),
+        Object.keys(zbiorcza_TP.m_standard),
+      ),
     );
     const products_max = await Products.aggregate(
-      createPipeline('max', Object.values(zbiorcza_TP.m_max)),
+      createPipeline(
+        'max',
+        Object.values(zbiorcza_TP.m_max),
+        Object.keys(zbiorcza_TP.m_max),
+      ),
     );
     const products_raptor = await Products.aggregate(
-      createPipeline('raptor', Object.values(zbiorcza_TP.m_raptor)),
+      createPipeline(
+        'raptor',
+        Object.values(zbiorcza_TP.m_raptor),
+        Object.keys(zbiorcza_TP.m_raptor),
+      ),
     );
 
     const excludeFromSpiral = [
@@ -354,29 +491,104 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       parseInt(application.highest),
     );
 
-    function addCountAndPriceToItems(items, series, countObj) {
-      // First, filter out items with a count of 0 based on countObj
-      const filteredItems = items.filter((item) => {
-        const itemCount = Math.ceil(countObj[item.height_mm] || 0);
-        return itemCount > 0; // Only include items with a count greater than 0
+    // Select correct product variant based on gap_between_slabs
+    // gap = 3mm -> select K3 or D3 variants
+    // gap = 5mm -> select K5 or D5 variants
+    const selectProductByGap = (products, gapValue) => {
+      const gapSuffix = gapValue === 3 ? '3' : '5'; // K3/D3 for 3mm, K5/D5 for 5mm
+      const selectedProducts = [];
+      const groupedByHeightAndSeries = {};
+
+      // Group products by height_mm and series
+      products.forEach((product) => {
+        const groupKey = `${product.series}-${product.height_mm}`;
+        if (!groupedByHeightAndSeries[groupKey]) {
+          groupedByHeightAndSeries[groupKey] = [];
+        }
+        groupedByHeightAndSeries[groupKey].push(product);
       });
 
-      // Then, map over filtered items to add count and total price
-      return filteredItems.map((item) => {
-        if (item.series === series) {
-          const count = Math.ceil(countObj[item.height_mm] || 0);
-          item.count = count;
-          item.total_price = (count * item.price_net).toFixed(2);
-          // Assuming price formatting logic is correct and omitted for brevity
+      // For each group, select the product matching gap_between_slabs
+      Object.values(groupedByHeightAndSeries).forEach((group) => {
+        if (group.length === 1) {
+          // Only one product in this height/series group - use it
+          selectedProducts.push(group[0]);
+        } else {
+          // Multiple products - select based on gap_between_slabs
+          // Check key field (e.g., "030-045 K3 100pcs") or distance_code (e.g., "STA-030-045-K3-(100)")
+          const matchingProduct = group.find((product) => {
+            const key = product.key || '';
+            const distanceCode = product.distance_code || '';
+            const searchText = `${key} ${distanceCode}`.toUpperCase();
+
+            // Look for K3/D3 (3mm) or K5/D5 (5mm) in the product identifiers
+            return (
+              searchText.includes(`K${gapSuffix}`) ||
+              searchText.includes(`D${gapSuffix}`)
+            );
+          });
+
+          if (matchingProduct) {
+            selectedProducts.push(matchingProduct);
+          } else {
+            // No match found - use first product as fallback
+            console.warn(
+              `No matching product found for gap=${gapValue}mm in group ${group[0].series}-${group[0].height_mm}. Using first product as fallback.`,
+            );
+            selectedProducts.push(group[0]);
+          }
         }
-        return item;
       });
+
+      return selectedProducts;
+    };
+
+    items = selectProductByGap(items, application.gap_between_slabs || 3);
+
+    function addCountAndPriceToItems(items, series, countObj) {
+      // Filter items by series and count > 0, then add pricing info
+      // Note: items are already filtered by selectProductByGap above, so no deduplication needed here
+      return items
+        .filter((item) => {
+          const itemCount = Math.round(countObj[item.height_mm] || 0);
+          return (
+            itemCount > 0 && item.series?.toLowerCase() === series.toLowerCase()
+          );
+        })
+        .map((item) => {
+          const count = Math.round(countObj[item.height_mm] || 0);
+          const priceNet = getPriceNet(item);
+          return {
+            ...item,
+            count: count,
+            total_price: (count * priceNet).toFixed(2),
+          };
+        });
     }
 
-    items = addCountAndPriceToItems(items, 'spiral', zbiorcza_TP.main_keys);
-    items = addCountAndPriceToItems(items, 'standard', zbiorcza_TP.main_keys);
-    items = addCountAndPriceToItems(items, 'max', zbiorcza_TP.main_keys);
-    items = addCountAndPriceToItems(items, 'raptor', zbiorcza_TP.main_keys);
+    // Accumulate items from all series instead of overwriting
+    const spiralItems = addCountAndPriceToItems(
+      items,
+      'spiral',
+      zbiorcza_TP.main_keys,
+    );
+    const standardItems = addCountAndPriceToItems(
+      items,
+      'standard',
+      zbiorcza_TP.main_keys,
+    );
+    const maxItems = addCountAndPriceToItems(
+      items,
+      'max',
+      zbiorcza_TP.main_keys,
+    );
+    const raptorItems = addCountAndPriceToItems(
+      items,
+      'raptor',
+      zbiorcza_TP.main_keys,
+    );
+
+    items = [...spiralItems, ...standardItems, ...maxItems, ...raptorItems];
 
     // Add products from application.products with full info
     const additionalProducts = application.products || [];
@@ -384,18 +596,18 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       const existingItem = items.find(
         (item) => item.height_mm === additionalProduct.height_mm,
       );
+
       if (existingItem) {
-        existingItem.count += additionalProduct.count;
-        existingItem.total_price = (
-          existingItem.count * existingItem.price_net
-        ).toFixed(2);
+        existingItem.count += Number(additionalProduct.count) || 0;
+        const priceNet = getPriceNet(existingItem);
+        existingItem.total_price = (existingItem.count * priceNet).toFixed(2);
       } else {
+        const priceNet = getPriceNet(additionalProduct);
         items.push({
           ...additionalProduct,
-          count: additionalProduct.count,
-          price_net: additionalProduct.price_net,
+          count: Number(additionalProduct.count) || 0,
           total_price: (
-            additionalProduct.count * additionalProduct.price_net
+            (Number(additionalProduct.count) || 0) * priceNet
           ).toFixed(2),
         });
       }
@@ -409,25 +621,62 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
      */
 
     const additionalAccessories = application.additional_accessories || [];
+
+    // Fetch full product data for accessories from database
+    const accessoryIds = additionalAccessories.map((acc) => Number(acc.id));
+    const fullAccessories = await Products.find({ id: { $in: accessoryIds } });
+
     additionalAccessories.forEach((additionalAccessory) => {
-      console.log('additionalAccessory:', additionalAccessory);
-      // Always add as a new item, don't try to find existing ones
-      items.push({
-        ...additionalAccessory,
-        count: Number(additionalAccessory.count),
-        price_net: Number(additionalAccessory.price_net),
-        total_price: (
-          Number(additionalAccessory.count) *
-          Number(additionalAccessory.price_net)
-        ).toFixed(2),
-      });
+      const count = Number(additionalAccessory.count) || 0;
+
+      // Find full product data from database
+      const fullProduct = fullAccessories.find(
+        (p) => p.id == additionalAccessory.id,
+      );
+
+      if (fullProduct) {
+        const priceNet = getPriceNet(fullProduct);
+
+        items.push({
+          ...fullProduct.toObject(),
+          count: count,
+          total_price: (count * priceNet).toFixed(2),
+        });
+      } else {
+        // Fallback if product not found in database
+        const priceNet = getPriceNet(additionalAccessory);
+        items.push({
+          ...additionalAccessory,
+          count: count,
+          total_price: (count * priceNet).toFixed(2),
+        });
+      }
     });
 
-    // Recalculate total price of the full order
+    // Recalculate total price of the full order using rounded counts
     const totalOrderPrice = items
-      .reduce((sum, item) => sum + parseFloat(item.total_price), 0)
+      .reduce((sum, item) => {
+        const roundedCount = Math.round(item.count || 0);
+        const itemTotal = roundedCount * getPriceNet(item);
+        return sum + itemTotal;
+      }, 0)
       .toFixed(2);
-    const total = new Intl.NumberFormat('pl-PL', {
+
+    // Format total price based on language/locale
+    const getLocale = (lang) => {
+      const localeMap = {
+        pl: 'pl-PL',
+        en: 'en-US',
+        de: 'de-DE',
+        fr: 'fr-FR',
+        es: 'es-ES',
+      };
+      return localeMap[lang] || 'pl-PL';
+    };
+
+    const locale = getLocale(applicationLang);
+
+    const total = new Intl.NumberFormat(locale, {
       style: 'decimal',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -459,7 +708,9 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       const getExpiryDate = () => {
         const date = new Date();
         date.setMonth(date.getMonth() + 1);
-        return date.toLocaleDateString('pl-PL');
+        return date.toLocaleDateString(
+          `${applicationLang}-${applicationLang.toUpperCase()}`,
+        );
       };
 
       const docDefinition = {
@@ -495,7 +746,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                   columns: [
                     {
                       width: '*',
-                      text: 'OFERTA INDYWIDUALNA',
+                      text: t.pdf.offerTitle,
                       style: 'offerTitle',
                       alignment: 'center',
                     },
@@ -507,12 +758,20 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                     {
                       width: '*',
                       text: [
-                        { text: 'Data utworzenia: ', style: 'dateLabel' },
                         {
-                          text: new Date().toLocaleDateString('pl-PL'),
+                          text: t.pdf.dateCreated + '  ',
+                          style: 'dateLabel',
+                        },
+                        {
+                          text: new Date().toLocaleDateString(
+                            `${applicationLang}-${applicationLang.toUpperCase()}`,
+                          ),
                           style: 'dateValue',
                         },
-                        { text: '    Ważna do: ', style: 'dateLabel' },
+                        {
+                          text: t.pdf.validUntil + '  ',
+                          style: 'dateLabel',
+                        },
                         { text: getExpiryDate(), style: 'dateValue' },
                       ],
                       alignment: 'center',
@@ -525,7 +784,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                     {
                       width: '50%',
                       stack: [
-                        { text: 'Dział sprzedaży:', style: 'contactHeader' },
+                        { text: t.pdf.salesDepartment, style: 'contactHeader' },
                         {
                           text: 'Adam Runo | +48 508 000 813 | adam.runo@ddgro.eu',
                           style: 'contactInfo',
@@ -537,7 +796,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                       width: '50%',
                       stack: [
                         {
-                          text: 'Dział obsługi klienta:',
+                          text: t.pdf.customerService,
                           style: 'contactHeader',
                         },
                         {
@@ -550,7 +809,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                   ],
                 },
                 {
-                  text: 'Producent: DECK-DRY POLSKA Sp. z o.o., Wenus 73A, 80-299 Gdańsk POLSKA',
+                  text: t.pdf.producer,
                   style: 'producerInfo',
                   alignment: 'center',
                   margin: [0, 5, 0, 0],
@@ -565,7 +824,11 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
             columns: [
               { text: 'www.ddgro.com', alignment: 'left' },
               {
-                text: `Strona ${currentPage} z ${pageCount}`,
+                text: `${
+                  applicationLang === 'pl' ? 'Strona' : 'Page'
+                } ${currentPage} ${
+                  applicationLang === 'pl' ? 'z' : 'of'
+                } ${pageCount}`,
                 alignment: 'right',
               },
             ],
@@ -575,40 +838,51 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           };
         },
         content: [
-          { text: 'Zestawienie wsporników', style: 'mainHeader' },
+          { text: t.pdf.supportsList, style: 'mainHeader' },
           {
             table: {
               headerRows: 1,
-              widths: ['15%', '25%', '15%', '15%', '15%', '15%'],
+              widths: ['40%', '15%', '15%', '15%', '15%'],
               body: [
                 [
-                  { text: 'Nazwa Skrócona', style: 'tableHeader' },
-                  { text: 'Nazwa', style: 'tableHeader' },
-                  { text: 'Wysokość [mm]', style: 'tableHeader' },
-                  { text: 'Ilość', style: 'tableHeader' },
-                  { text: 'Cena katalogowa\nnetto', style: 'tableHeader' },
-                  { text: 'Łącznie netto', style: 'tableHeader' },
+                  { text: t.pdf.name, style: 'tableHeader' },
+                  { text: t.pdf.height, style: 'tableHeader' },
+                  { text: t.pdf.quantity, style: 'tableHeader' },
+                  { text: t.pdf.catalogPrice, style: 'tableHeader' },
+                  { text: t.pdf.totalNet, style: 'tableHeader' },
                 ],
                 ...items.map((item) => [
-                  { text: item.short_name || 'N/A', style: 'tableCell' },
-                  { text: item.name || 'N/A', style: 'tableCell' },
+                  {
+                    text:
+                      item.name?.[applicationLang] ||
+                      item.name?.pl ||
+                      item.name ||
+                      'N/A',
+                    style: 'tableCell',
+                  },
                   { text: item.height_mm || '--', style: 'tableCell' },
                   {
-                    text: item.count || 0,
+                    text: Math.round(item.count || 0),
                     style: 'tableCell',
                     alignment: 'right',
                   },
                   {
-                    text: new Intl.NumberFormat('pl-PL', {
-                      minimumFractionDigits: 2,
-                    }).format(item.price_net || 0),
+                    text: new Intl.NumberFormat(
+                      `${applicationLang}-${applicationLang.toUpperCase()}`,
+                      {
+                        minimumFractionDigits: 2,
+                      },
+                    ).format(getPriceNet(item)),
                     style: 'tableCell',
                     alignment: 'right',
                   },
                   {
-                    text: new Intl.NumberFormat('pl-PL', {
-                      minimumFractionDigits: 2,
-                    }).format(item.total_price || 0),
+                    text: new Intl.NumberFormat(
+                      `${applicationLang}-${applicationLang.toUpperCase()}`,
+                      {
+                        minimumFractionDigits: 2,
+                      },
+                    ).format(Math.round(item.count || 0) * getPriceNet(item)),
                     style: 'tableCell',
                     alignment: 'right',
                   },
@@ -653,8 +927,8 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                 table: {
                   body: [
                     [
-                      { text: 'Suma netto:', style: 'totalLabel' },
-                      { text: total + ' PLN', style: 'totalAmount' },
+                      { text: t.pdf.totalNetSum, style: 'totalLabel' },
+                      { text: total + ' ' + currency, style: 'totalAmount' },
                     ],
                   ],
                 },
@@ -678,13 +952,14 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           {
             stack: [
               {
-                text: 'KATALOG DD GROUP',
+                text: t.pdf.catalogTitle,
                 style: 'qrTitle',
                 alignment: 'center',
                 margin: [0, 60, 0, 10],
               },
               {
-                text: 'ddgro.eu/katalog-pl',
+                // TODO: przygotowac katalogi w wersjach jezykowych  i podmienic na produkcji
+                text: 'ddgro.eu/ddgro-' + applicationLang,
                 style: 'qrLink',
                 alignment: 'center',
                 margin: [0, 0, 0, 40],
@@ -705,20 +980,13 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
             margin: [0, 20, 0, 40],
           },
           {
-            text: 'Dlaczego warto zamówić u nas?',
+            text: t.pdf.whyOrderFromUs,
             style: 'footerHeader',
             alignment: 'center',
             margin: [0, 0, 0, 20],
           },
           {
-            ul: [
-              'Oferowane produkty są produkowane w Polsce.',
-              'Dostarczamy 1-2 dni na terenie PL.',
-              'Pomożemy Ci obliczyć zapotrzebownie na ilość wsporników i ich wysokość.',
-              'Nasze produkty posiadają Krajową Ocenę Techniczną ITB.',
-              'Zamawiasz dokładnie tyle sztuk ile potrzebujesz.',
-              'Masz możliwość zwrócenia niewykorzystanych ilości.',
-            ],
+            ul: t.pdf.benefits,
             style: 'footerList',
             alignment: 'center',
             margin: [100, 0, 100, 0],
@@ -834,38 +1102,72 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       });
     };
 
+    console.log('📧 Creating PDF...', {
+      itemsCount: items.length,
+      totalPrice: total,
+      timestamp: new Date().toISOString(),
+    });
     const pdfFilePath = await createPDF(items, total);
 
-    // Check if the file exists
+    // Check if the file exists and log file info
     if (!fs.existsSync(pdfFilePath)) {
+      console.error('📧 PDF creation failed - file does not exist');
       return res.status(500).json({
         message:
           'Nie udało się utoworzyć pliku PDF. Skontaktuj się z administratorem',
       });
     }
 
+    const pdfStats = fs.statSync(pdfFilePath);
+    console.log('📧 PDF created successfully', {
+      filePath: pdfFilePath,
+      fileSize: `${Math.round(pdfStats.size / 1024)}KB`,
+      timestamp: new Date().toISOString(),
+    });
     const emailOptions = {
       from: `DDGRO.EU <noreply@ddpedestals.eu>`,
       to: to,
-      subject: 'Twoje zestawienie wsporników DDGRO',
-      template: 'order',
+      subject: `${
+        process.env.NODE_ENV === 'development'
+          ? t.email.devSubject
+          : t.email.subject
+      }`,
+      template: `order_${applicationLang}`,
       context: {
         items,
         total,
       },
       attachments: [
         {
-          filename: 'podsumowanie_wspornikow.pdf',
+          filename: (() => {
+            switch (applicationLang) {
+              case 'pl':
+                return 'podsumowanie_wspornikow.pdf';
+              case 'de':
+                return 'stützen_zusammenfassung.pdf';
+              case 'fr':
+                return 'résumé_des_supports.pdf';
+              case 'es':
+                return 'resumen_de_soportes.pdf';
+              default:
+                return 'ddgro_offer.pdf';
+            }
+          })(),
           path: pdfFilePath,
           contentType: 'application/pdf',
         },
       ],
     };
-
+    // do właściciela zawsze po polsku przychodzi info
     const toOwnerOptions = {
-      from: `DDGRO.EU <noreply@ddpedestals.eu>`,
-      to: 'jozef.baar@ddgro.eu',
-      subject: 'Informacja o nowym zamówieniu',
+      from: `DDGRO.EU <contact@ddgro.eu>`,
+      to:
+        process.env.NODE_ENV === 'development'
+          ? 'info@j-filipiak.pl'
+          : 'jozef.baar@ddgro.eu',
+      subject: `${
+        process.env.NODE_ENV === 'development' ? '[DEV]' : ''
+      } Informacja o nowym zamówieniu`,
       template: 'order_ext',
       context: {
         // Original data
@@ -905,7 +1207,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       },
       attachments: [
         {
-          filename: 'podsumowanie_wspornikow.pdf',
+          filename: `oferta_wyslana_do_klienta_id_#${application._id}.pdf`,
           path: pdfFilePath,
           contentType: 'application/pdf',
         },
@@ -913,11 +1215,16 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     };
 
     try {
+      console.log('📧 Preparing to send emails...', {
+        environment: process.env.NODE_ENV,
+        timestamp: new Date().toISOString(),
+      });
+
       // development
       if (process.env.NODE_ENV === 'development') {
         const toDeveloperOptions = {
-          from: `DDGRO.EU <noreply@ddpedestals.eu>`,
-          to: 'joozef.baar@ddgro.eu',
+          from: `DDGRO.EU <contact@ddgro.eu>`,
+          to: 'info@j-filipiak.pl',
           subject: '[DEV] Informacja o nowym zamówieniu',
           template: 'order_ext',
           context: {
@@ -965,35 +1272,61 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           ],
         };
 
-        await Promise.all([
-          sendEmail(emailOptions),
-          sendEmail(toDeveloperOptions),
-        ]);
+        // Send both emails and wait for completion
+        console.log('📧 Sending development emails in parallel...');
+        const emailPromises = [
+          sendEmail(emailOptions).then((result) => {
+            console.log('📧 Client email sent successfully (dev)');
+            return result;
+          }),
+          sendEmail(toDeveloperOptions).then((result) => {
+            console.log('📧 Developer email sent successfully (dev)');
+            return result;
+          }),
+        ];
+        await Promise.all(emailPromises);
       } else {
         // production
-        await Promise.all([sendEmail(emailOptions), sendEmail(toOwnerOptions)]);
+        console.log('📧 Sending production emails in parallel...');
+        const prodEmailPromises = [
+          sendEmail(emailOptions).then((result) => {
+            console.log('📧 Client email sent successfully (prod)');
+            return result;
+          }),
+          sendEmail(toOwnerOptions).then((result) => {
+            console.log('📧 Owner email sent successfully (prod)');
+            return result;
+          }),
+        ];
+        await Promise.all(prodEmailPromises);
       }
     } finally {
+      // Clean up the file after ALL emails are sent
+      // Use setTimeout to ensure nodemailer has finished processing the file
       setTimeout(() => {
         fs.unlink(pdfFilePath, (err) => {
           if (err) console.error('Failed to delete temporary PDF file:', err);
           else console.log('Temporary PDF file deleted successfully');
         });
-      }, 1000);
+      }, 1000); // 1 second delay - file is read into memory as base64
     }
 
-    res.status(200).json({ message: 'Oferta została wysłana!' });
+    res.status(200).json({
+      message: t.email.offerSent,
+      environment: process.env.NODE_ENV,
+    });
   } catch (e) {
+    console.error('Error:', e.message, e.stack);
     res.status(400).json({ message: e.message, error: e });
   }
 });
 
-// Network connectivity test endpoint for debugging email timeouts
+// Network connectivity test endpoint
 router.get('/test-smtp-connection', async function (req, res, next) {
   const testResults = {
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
-    tests: []
+    tests: [],
   };
 
   // Test 1: DNS Resolution
@@ -1005,13 +1338,13 @@ router.get('/test-smtp-connection', async function (req, res, next) {
       test: 'DNS Resolution',
       status: 'SUCCESS',
       duration: Date.now() - start,
-      result: addresses
+      result: addresses,
     });
   } catch (error) {
     testResults.tests.push({
       test: 'DNS Resolution',
       status: 'FAILED',
-      error: error.message
+      error: error.message,
     });
   }
 
@@ -1028,7 +1361,7 @@ router.get('/test-smtp-connection', async function (req, res, next) {
         resolve({
           test: `TCP Connection ${host}:${port}`,
           status: 'SUCCESS',
-          duration: Date.now() - start
+          duration: Date.now() - start,
         });
       });
 
@@ -1037,7 +1370,7 @@ router.get('/test-smtp-connection', async function (req, res, next) {
         reject({
           test: `TCP Connection ${host}:${port}`,
           status: 'TIMEOUT',
-          duration: Date.now() - start
+          duration: Date.now() - start,
         });
       });
 
@@ -1047,7 +1380,7 @@ router.get('/test-smtp-connection', async function (req, res, next) {
           test: `TCP Connection ${host}:${port}`,
           status: 'FAILED',
           duration: Date.now() - start,
-          error: err.message
+          error: err.message,
         });
       });
 
@@ -1060,7 +1393,7 @@ router.get('/test-smtp-connection', async function (req, res, next) {
     { host: 'smtp.postmarkapp.com', port: 587 },
     { host: 'smtp.postmarkapp.com', port: 25 },
     { host: 'smtp.postmarkapp.com', port: 2525 },
-    { host: 'google.com', port: 80 } // Control test
+    { host: 'google.com', port: 80 }, // Control test
   ];
 
   for (const { host, port } of smtpTests) {
@@ -1072,18 +1405,12 @@ router.get('/test-smtp-connection', async function (req, res, next) {
     }
   }
 
-  // Test 3: Environment Variables (current master structure)
+  // Test 3: Environment Variables
   testResults.environment_check = {
-    // Development (Mailtrap)
-    MAILTRAP_HOST: process.env.MAILTRAP_HOST || 'NOT_SET',
-    MAILTRAP_PORT: process.env.MAILTRAP_PORT || 'NOT_SET',
-    MAILTRAP_USERNAME: process.env.MAILTRAP_USERNAME ? 'SET' : 'NOT_SET',
-    MAILTRAP_PASSWORD: process.env.MAILTRAP_PASSWORD ? 'SET' : 'NOT_SET',
-    // Production (Postmark)
     MAIL_HOST: process.env.MAIL_HOST || 'NOT_SET',
     MAIL_PORT: process.env.MAIL_PORT || 'NOT_SET',
     MAIL_USERNAME: process.env.MAIL_USERNAME ? 'SET' : 'NOT_SET',
-    MAIL_PASSWORD: process.env.MAIL_PASSWORD ? 'SET' : 'NOT_SET'
+    MAIL_PASSWORD: process.env.MAIL_PASSWORD ? 'SET' : 'NOT_SET',
   };
 
   res.json(testResults);

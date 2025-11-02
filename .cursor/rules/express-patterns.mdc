@@ -1,0 +1,128 @@
+# Express.js Development Patterns
+
+## Route Handler Structure
+Follow the established pattern from [routes/api/](mdc:routes/api/):
+
+```javascript
+const express = require('express');
+const router = express.Router();
+
+// Import required models and services
+const Model = require('../../models/ModelName');
+
+// GET route with proper error handling
+router.get('/', async (req, res) => {
+  try {
+    const data = await Model.find();
+    res.json({ 
+      success: true, 
+      data: data 
+    });
+  } catch (error) {
+    console.error('Error fetching data:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// POST route with validation
+router.post('/', async (req, res) => {
+  try {
+    // Validate request data
+    const { field1, field2 } = req.body;
+    
+    if (!field1 || !field2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Required fields missing'
+      });
+    }
+    
+    // Create new record
+    const newRecord = new Model({ field1, field2 });
+    await newRecord.save();
+    
+    res.status(201).json({ 
+      success: true, 
+      data: newRecord 
+    });
+  } catch (error) {
+    console.error('Error creating record:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+module.exports = router;
+```
+
+## Mongoose Model Patterns
+Follow the patterns from [models/](mdc:models/):
+
+```javascript
+const mongoose = require('mongoose');
+
+const ModelSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  description: {
+    type: String,
+    default: ''
+  },
+  status: {
+    type: String,
+    enum: ['active', 'inactive'],
+    default: 'active'
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+// Add indexes for performance
+ModelSchema.index({ name: 1 });
+ModelSchema.index({ status: 1 });
+
+module.exports = mongoose.model('ModelName', ModelSchema);
+```
+
+## Error Handling Standards
+- **Always use try-catch** for async operations
+- **Log errors** to console with descriptive messages
+- **Return consistent error format**:
+  ```javascript
+  {
+    success: false,
+    error: "Error message",
+    details: "Optional additional details"
+  }
+  ```
+
+## Authentication Middleware
+Reference [config/passport.js](mdc:config/passport.js) for authentication patterns:
+
+```javascript
+const authenticateJWT = (req, res, next) => {
+  // JWT validation logic
+  // Add user to req.user if valid
+  next();
+};
+
+// Protect routes
+router.get('/protected', authenticateJWT, (req, res) => {
+  // Protected route logic
+});
+```
+
+## Database Connection
+- Use Mongoose for MongoDB operations
+- Implement proper connection handling
+- Add connection error handling and reconnection logic

@@ -1,0 +1,134 @@
+# Database Migration Patterns
+
+## Migration Structure
+Database migrations are located in [migrations/](mdc:migrations/) and follow established patterns.
+
+### Current Migration Files
+- [migrations/migrate-accessories-02-2025.js](mdc:migrations/migrate-accessories-02-2025.js) - Accessories data migration
+- [migrations/migrate-products-02-2025.js](mdc:migrations/migrate-products-02-2025.js) - Products data migration
+
+## Migration File Pattern
+Follow this structure for new migrations:
+
+```javascript
+/**
+ * Migration: [Brief description]
+ * Date: YYYY-MM-DD
+ * Purpose: [Detailed explanation of what this migration does]
+ */
+
+const mongoose = require('mongoose');
+
+// Import required models
+const Model = require('../models/ModelName');
+
+const runMigration = async () => {
+  try {
+    console.log('Starting migration: [migration-name]');
+    
+    // Migration logic here
+    const updateResult = await Model.updateMany(
+      { /* conditions */ },
+      { /* updates */ },
+      { upsert: false }
+    );
+    
+    console.log(`Migration completed. Modified ${updateResult.modifiedCount} records.`);
+    
+    // Log migration completion
+    console.log('Migration [migration-name] completed successfully');
+    
+  } catch (error) {
+    console.error('Migration failed:', error);
+    throw error;
+  }
+};
+
+// Execute migration if run directly
+if (require.main === module) {
+  runMigration()
+    .then(() => {
+      console.log('Migration script completed');
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error('Migration script failed:', error);
+      process.exit(1);
+    });
+}
+
+module.exports = { runMigration };
+```
+
+## Migration Naming Convention
+Use descriptive, timestamped filenames:
+- `migrate-[entity]-[MM-YYYY].js` - Monthly data migrations
+- `migrate-[feature]-[YYYY-MM-DD].js` - Feature-specific migrations
+- `migrate-[action]-[entity]-[timestamp].js` - Specific action migrations
+
+Examples:
+- `migrate-products-03-2025.js`
+- `migrate-user-roles-2025-03-15.js`
+- `migrate-update-pricing-20250315.js`
+
+## Best Practices
+
+### Data Safety
+- **Always backup** data before running migrations
+- **Test migrations** on development/staging first
+- **Use transactions** for complex migrations when possible
+- **Implement rollback** strategies for critical migrations
+
+### Migration Logic
+```javascript
+// Good: Batch processing for large datasets
+const batchSize = 1000;
+let processed = 0;
+
+while (true) {
+  const batch = await Model.find({}).skip(processed).limit(batchSize);
+  
+  if (batch.length === 0) break;
+  
+  for (const doc of batch) {
+    // Process individual document
+    await doc.save();
+  }
+  
+  processed += batch.length;
+  console.log(`Processed ${processed} records`);
+}
+```
+
+### Error Handling
+- Log all migration steps with timestamps
+- Include detailed error messages
+- Implement proper exit codes
+- Track migration status in database if needed
+
+### Validation
+```javascript
+// Validate data before and after migration
+const validateMigration = async () => {
+  const totalBefore = await Model.countDocuments();
+  
+  // Run migration
+  await runMigration();
+  
+  const totalAfter = await Model.countDocuments();
+  
+  if (totalBefore !== totalAfter) {
+    throw new Error('Data count mismatch after migration');
+  }
+};
+```
+
+## Running Migrations
+Execute migrations from the backend directory:
+```bash
+# Run specific migration
+node migrations/migrate-products-02-2025.js
+
+# Or through npm script (if defined)
+npm run migrate:products
+```

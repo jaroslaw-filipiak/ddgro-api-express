@@ -1,0 +1,122 @@
+# Services & Templates Management
+
+## Email Service
+The email service is centralized in [services/sendEmail.js](mdc:services/sendEmail.js). Follow this pattern:
+
+```javascript
+const sendEmail = require('../services/sendEmail');
+
+// Send localized email
+const sendOrderConfirmation = async (orderData, userLocale = 'en') => {
+  try {
+    const templateName = `order_${userLocale}`;
+    
+    const emailOptions = {
+      to: orderData.email,
+      subject: getLocalizedSubject(userLocale),
+      template: templateName,
+      context: {
+        // Template variables
+        customerName: orderData.name,
+        orderDetails: orderData.items,
+        totalAmount: orderData.total
+      }
+    };
+    
+    await sendEmail(emailOptions);
+    console.log(`Email sent successfully to ${orderData.email}`);
+  } catch (error) {
+    console.error('Email sending failed:', error);
+    throw error;
+  }
+};
+```
+
+## Email Templates
+Templates are located in [templates/emails/](mdc:templates/emails/) with multi-language support:
+
+### Template Structure
+- `order_en.hbs` - English template
+- `order_de.hbs` - German template  
+- `order_es.hbs` - Spanish template
+- `order_fr.hbs` - French template
+- `order_pl.hbs` - Polish template
+- `order_ext.hbs` - Extended/fallback template
+
+### Template Variables
+Use consistent variable naming across all language templates:
+```handlebars
+<h1>{{greeting}} {{customerName}}</h1>
+<p>{{orderMessage}}</p>
+
+{{#each orderItems}}
+  <div class="item">
+    <span>{{name}}</span>
+    <span>{{quantity}} x {{price}}</span>
+  </div>
+{{/each}}
+
+<div class="total">{{totalLabel}}: {{totalAmount}}</div>
+```
+
+## PDF Generation
+PDF templates are in [templates/pdf/](mdc:templates/pdf/):
+
+### Template Files
+- [templates/pdf/template.html](mdc:templates/pdf/template.html) - Main PDF template
+- [templates/pdf/template2.html](mdc:templates/pdf/template2.html) - Alternative layout
+
+### PDF Generation Pattern
+```javascript
+const generatePDF = async (data, templateType = 'template') => {
+  try {
+    // Load template
+    const templatePath = `./templates/pdf/${templateType}.html`;
+    const htmlTemplate = await readFile(templatePath, 'utf8');
+    
+    // Compile template with data
+    const compiledHTML = compileTemplate(htmlTemplate, data);
+    
+    // Generate PDF
+    const pdfBuffer = await htmlToPDF(compiledHTML);
+    
+    return pdfBuffer;
+  } catch (error) {
+    console.error('PDF generation failed:', error);
+    throw error;
+  }
+};
+```
+
+## Translation Integration
+Backend translations from [translations/](mdc:translations/) should be used in:
+
+### Email Subject Lines
+```javascript
+const getLocalizedSubject = (locale) => {
+  const translations = require('../translations');
+  const t = translations[locale] || translations.en;
+  return t.email.orderConfirmation.subject;
+};
+```
+
+### Template Context
+```javascript
+const getEmailContext = (orderData, locale) => {
+  const translations = require('../translations');
+  const t = translations[locale] || translations.en;
+  
+  return {
+    greeting: t.email.greeting,
+    orderMessage: t.email.orderConfirmation.message,
+    totalLabel: t.common.total,
+    ...orderData
+  };
+};
+```
+
+## Error Handling
+- Always log email/PDF generation errors
+- Implement fallback mechanisms for failed sends
+- Use English as fallback locale for missing translations
+- Return appropriate HTTP status codes for API responses

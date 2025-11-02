@@ -1,0 +1,384 @@
+---
+globs: *.js
+description: Express.js routing patterns and API endpoint standards
+---
+
+# Express.js Routing Patterns
+
+## Application Setup
+
+Follow the pattern from [app.js](mdc:app.js):
+
+### Core Dependencies and Configuration
+
+```javascript
+const express = require('express');
+const path = require('path');
+const cookieParser = require('cookie-parser');
+const logger = require('morgan');
+const dotenv = require('dotenv').config();
+const mongoose = require('mongoose');
+const cors = require('cors');
+const passport = require('./config/passport');
+```
+
+### CORS Configuration
+
+```javascript
+const allowedOrigins =
+  process.env.NODE_ENV === 'development'
+    ? '*'
+    : [
+        'http://localhost:3000',
+        'https://kalkulator.ddgro.eu',
+        'https://ddgro-form-git-feature-front-964842-jaroslawfilipiaks-projects.vercel.app',
+      ];
+
+const corsOptions = {
+  origin: allowedOrigins,
+  credentials: true,
+};
+```
+
+### Middleware Setup
+
+```javascript
+const app = express();
+
+app.use(express.json({ limit: '50mb' }));
+app.use(cors(corsOptions));
+app.use(logger('dev'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(passport.initialize());
+```
+
+### Database Connection
+
+```javascript
+mongoose.connect(process.env.MONGODB_URI);
+```
+
+## Route Structure
+
+Based on [routes/api/](mdc:routes/api/) patterns:
+
+### Route File Template
+
+```javascript
+const express = require('express');
+const mongoose = require('mongoose');
+const router = express.Router();
+
+const ModelName = require('../../models/ModelName');
+
+// Routes here
+
+module.exports = router;
+```
+
+### Standard Route Patterns
+
+Based on [routes/api/products.js](mdc:routes/api/products.js):
+
+#### GET All Resources
+
+```javascript
+router.get('/', async function (req, res, next) {
+  try {
+    const resources = await ModelName.find();
+    res.status(200).json({ data: resources });
+  } catch (error) {
+    next(error);
+  }
+});
+```
+
+#### GET Single Resource by ID
+
+```javascript
+router.get('/:id', async function (req, res, next) {
+  try {
+    const { id } = req.params;
+
+    // Find by custom numeric ID, not MongoDB's _id
+    const resource = await ModelName.findOne({ id: Number(id) });
+
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    res.status(200).json({ data: resource });
+  } catch (error) {
+    next(error);
+  }
+});
+```
+
+#### PUT Update Resource
+
+```javascript
+router.put('/:id', async function (req, res, next) {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    // Find and update by custom numeric ID
+    const resource = await ModelName.findOneAndUpdate(
+      { id: Number(id) },
+      updates,
+      { new: true, runValidators: true },
+    );
+
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    res.status(200).json({
+      message: 'Resource updated successfully',
+      data: resource,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+```
+
+#### POST Create Resource
+
+```javascript
+router.post('/', async function (req, res, next) {
+  try {
+    const data = req.body;
+
+    const resource = await ModelName.create(data);
+    await resource.save();
+
+    res.status(201).json({
+      message: 'Resource created successfully',
+      data: resource,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+```
+
+## Error Handling Patterns
+
+### Async Route Handler Wrapper
+
+```javascript
+const asyncHandler = (fn) => (req, res, next) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
+
+// Usage
+router.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    const data = await ModelName.find();
+    res.json({ data });
+  }),
+);
+```
+
+### Error Response Format
+
+Based on patterns from [routes/api/application.js](mdc:routes/api/application.js):
+
+#### Success Response
+
+```javascript
+res.status(200).json({
+  success: true,
+  data: result,
+  message: 'Operation completed successfully',
+});
+```
+
+#### Error Response
+
+```javascript
+res.status(400).json({
+  success: false,
+  error: error.message,
+  details: error.details, // optional
+});
+```
+
+#### Not Found Response
+
+```javascript
+return res.status(404).json({
+  error: 'Resource not found',
+});
+```
+
+## Route Mounting
+
+Based on [app.js](mdc:app.js):
+
+```javascript
+// Import routers
+const indexRouter = require('./routes/index');
+const apiUsersRouter = require('./routes/api/users');
+const apiAccesoriesRouter = require('./routes/api/accesories');
+const apiProductsRouter = require('./routes/api/products');
+const apiApplicationsRouter = require('./routes/api/application');
+const apiAuthRouter = require('./routes/api/auth');
+
+// Mount routes
+app.use('/', indexRouter);
+app.use('/api/auth', apiAuthRouter);
+app.use('/api/users', apiUsersRouter);
+app.use('/api/accesories', apiAccesoriesRouter);
+app.use('/api/products', apiProductsRouter);
+app.use('/api/application', apiApplicationsRouter);
+```
+
+## Authentication Middleware
+
+### Passport.js Integration
+
+```javascript
+const passport = require('./config/passport');
+
+// Protected route example
+router.get(
+  '/protected',
+  passport.authenticate('jwt', { session: false }),
+  async (req, res) => {
+    res.json({ user: req.user });
+  },
+);
+```
+
+### Custom Auth Middleware
+
+```javascript
+const requireAuth = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  // Verify token logic
+  next();
+};
+
+// Usage
+router.get('/admin', requireAuth, async (req, res) => {
+  // Protected route logic
+});
+```
+
+## Request Validation
+
+### Basic Validation
+
+```javascript
+const validateCreateRequest = (req, res, next) => {
+  const { email, name } = req.body;
+
+  if (!email || !name) {
+    return res.status(400).json({
+      error: 'Missing required fields',
+      required: ['email', 'name'],
+    });
+  }
+
+  next();
+};
+
+router.post('/', validateCreateRequest, async (req, res) => {
+  // Route logic
+});
+```
+
+### Query Parameter Handling
+
+```javascript
+router.get('/', async (req, res, next) => {
+  try {
+    const { type, limit = 10, page = 1 } = req.query;
+
+    const filter = type ? { type } : {};
+    const skip = (page - 1) * limit;
+
+    const resources = await ModelName.find(filter)
+      .limit(Number(limit))
+      .skip(skip);
+
+    res.json({ data: resources });
+  } catch (error) {
+    next(error);
+  }
+});
+```
+
+## File Upload Handling
+
+### File Processing Pattern
+
+```javascript
+const multer = require('multer');
+const upload = multer({ dest: 'temp/' });
+
+router.post('/upload', upload.single('file'), async (req, res) => {
+  try {
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Process file
+    res.json({
+      message: 'File uploaded successfully',
+      filename: file.filename,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+```
+
+## Response Helpers
+
+### Pagination Helper
+
+```javascript
+const paginate = (data, page, limit) => {
+  const total = data.length;
+  const totalPages = Math.ceil(total / limit);
+
+  return {
+    data: data.slice((page - 1) * limit, page * limit),
+    pagination: {
+      current_page: page,
+      total_pages: totalPages,
+      total_items: total,
+      items_per_page: limit,
+    },
+  };
+};
+```
+
+### Standard Response Helper
+
+```javascript
+const sendResponse = (res, statusCode, data, message = null) => {
+  const response = {
+    success: statusCode < 400,
+    data,
+  };
+
+  if (message) response.message = message;
+
+  res.status(statusCode).json(response);
+};
+```

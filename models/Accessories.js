@@ -1,6 +1,11 @@
-const express = require("express");
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
+/*
+ *
+ * Tą kolekcję robie całkowicie @deprecated z tego względu, że
+ * akcesoria są w produktach jako AKCW- także wolałbym mieć wszystko w jednej kolekcji
+ *
+ */
 const AccessoriesSchema = new mongoose.Schema({
   code: {
     type: Number,
@@ -34,4 +39,4 @@ const AccessoriesSchema = new mongoose.Schema({
   },
 });
 
-module.exports = mongoose.model("Accessories", AccessoriesSchema);
+module.exports = mongoose.model('Accessories', AccessoriesSchema);

@@ -1,0 +1,468 @@
+---
+globs: *.js
+description: MongoDB/Mongoose model patterns and database schema design
+---
+
+# MongoDB/Mongoose Model Patterns
+
+## Basic Model Structure
+
+Follow the pattern from [models/](mdc:models/) directory:
+
+### Simple Model Pattern
+
+Based on [models/Application.js](mdc:models/Application.js):
+
+```javascript
+const mongoose = require('mongoose');
+
+const ModelNameSchema = new mongoose.Schema({
+  created_at: {
+    type: Date,
+    default: Date.now,
+  },
+  name: {
+    type: String,
+    required: true,
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+  // Additional fields...
+});
+
+module.exports = mongoose.model('ModelName', ModelNameSchema);
+```
+
+## Advanced Model Patterns
+
+Based on [models/Products.js](mdc:models/Products.js):
+
+### Multilingual Field Support
+
+```javascript
+// Define supported languages
+const SUPPORTED_LANGUAGES = ['pl', 'en', 'de', 'fr', 'es'];
+const DEFAULT_LANGUAGE = 'pl';
+const MULTILINGUAL_FIELDS = ['name', 'short_name', 'description'];
+
+const ProductsSchema = new mongoose.Schema({
+  // Multilingual fields
+  name: {
+    type: Object,
+    default: {},
+    validate: {
+      validator: function (value) {
+        return (
+          value && value[DEFAULT_LANGUAGE] && value[DEFAULT_LANGUAGE].length > 0
+        );
+      },
+      message: (props) =>
+        `${DEFAULT_LANGUAGE} language is required for name field`,
+    },
+  },
+  description: {
+    type: Object,
+    default: {},
+  },
+});
+```
+
+### Complex Field Types and Validation
+
+```javascript
+const ProductsSchema = new mongoose.Schema({
+  // Mixed type for flexible IDs
+  id: {
+    type: mongoose.Schema.Types.Mixed,
+    required: true,
+    unique: true,
+  },
+
+  // Enum validation
+  price_unit: {
+    type: String,
+    enum: ['unit', 'packaging'],
+    default: 'unit',
+  },
+
+  // Custom validation
+  price: {
+    type: Object,
+    default: {},
+    validate: {
+      validator: function (value) {
+        return value && value['PLN'] !== undefined;
+      },
+      message: (props) => `PLN price is required`,
+    },
+  },
+
+  // Nested objects with structure
+  packaging_dimensions: {
+    cm: {
+      type: String, // e.g., "60 × 50 × 40"
+    },
+    inch: {
+      type: String, // e.g., "23 5/8 × 19 11/16 × 15 3/4"
+    },
+  },
+
+  // Complex default objects
+  language_currency_map: {
+    type: Object,
+    default: {
+      pl: 'PLN',
+      en: 'USD',
+      de: 'EUR',
+      fr: 'EUR',
+      es: 'EUR',
+    },
+  },
+});
+```
+
+### Schema Options
+
+```javascript
+const ProductsSchema = new mongoose.Schema(
+  {
+    // Schema fields
+  },
+  {
+    // Enable automatic timestamps
+    timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
+
+    // Include virtuals in JSON output
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  },
+);
+```
+
+## Pre/Post Hooks
+
+### Pre-save Hook
+
+```javascript
+ProductsSchema.pre('save', function (next) {
+  // Generate key from product info if not provided
+  if (!this.key && this.distance_code && this.packaging) {
+    this.key = `${this.distance_code} ${this.packaging}pcs`;
+  }
+
+  next();
+});
+```
+
+### Pre-validate Hook
+
+```javascript
+ProductsSchema.pre('validate', function (next) {
+  // Normalize email before validation
+  if (this.email) {
+    this.email = this.email.toLowerCase().trim();
+  }
+
+  next();
+});
+```
+
+## Instance Methods
+
+### Localization Methods
+
+```javascript
+// Get localized content
+ProductsSchema.methods.getLocalized = function (
+  field,
+  language = DEFAULT_LANGUAGE,
+) {
+  if (!this[field]) return '';
+  return this[field][language] || this[field][DEFAULT_LANGUAGE] || '';
+};
+
+// Get all content in preferred language
+ProductsSchema.methods.getAllLocalized = function (
+  language = DEFAULT_LANGUAGE,
+  includePriceDetails = false,
+) {
+  const result = { ...this.toObject() };
+
+  // Replace multilingual fields with localized versions
+  MULTILINGUAL_FIELDS.forEach((field) => {
+    if (this[field]) {
+      result[field] = this.getLocalized(field, language);
+    }
+  });
+
+  return result;
+};
+```
+
+### Business Logic Methods
+
+```javascript
+// Format price for display
+ProductsSchema.methods.formatPrice = function (amount, currency) {
+  let locale = 'en';
+
+  if (currency === 'PLN') locale = 'pl';
+  else if (currency === 'EUR') locale = 'de';
+
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: currency,
+    minimumFractionDigits: 2,
+  }).format(amount);
+};
+
+// Calculate price with VAT
+ProductsSchema.methods.getPriceWithVAT = function (
+  country = 'PL',
+  currency = 'PLN',
+) {
+  if (!this.price || !this.price[currency]) {
+    return null;
+  }
+
+  const vatRate =
+    this.vat_rates[country] !== undefined
+      ? this.vat_rates[country]
+      : this.vat_rates.default;
+
+  const netPrice = this.price[currency];
+  const grossPrice = netPrice * (1 + vatRate / 100);
+
+  return {
+    net: netPrice,
+    gross: grossPrice,
+    vat_rate: vatRate,
+    vat_amount: grossPrice - netPrice,
+    currency: currency,
+    formatted_net: this.formatPrice(netPrice, currency),
+    formatted_gross: this.formatPrice(grossPrice, currency),
+  };
+};
+```
+
+### Calculation Methods
+
+```javascript
+// Calculate shipping requirements
+ProductsSchema.methods.calculateShippingWeight = function (quantity) {
+  if (!this.packaging_weight || !this.packaging_weight.kg) {
+    return null;
+  }
+
+  const packagesNeeded = Math.ceil(quantity / this.packaging);
+  const totalWeight = packagesNeeded * this.packaging_weight.kg;
+
+  return {
+    quantity: quantity,
+    packages_needed: packagesNeeded,
+    total_weight_kg: totalWeight,
+    total_weight_lbs: totalWeight * 2.20462,
+  };
+};
+
+// Get comprehensive information
+ProductsSchema.methods.getPackagingInfo = function () {
+  return {
+    pieces_per_package: this.packaging,
+    dimensions: this.packaging_dimensions,
+    weight: this.packaging_weight,
+    products_per_pallet: this.euro_palet_products,
+    packages_per_pallet: this.euro_palet_packages,
+    pallet_dimensions: this.pallet_dimensions,
+    pallet_weight: this.pallet_weight,
+  };
+};
+```
+
+## Static Methods
+
+### Query Helpers
+
+```javascript
+// Find by localized field
+ProductsSchema.statics.findByLocalized = async function (
+  field,
+  value,
+  language = DEFAULT_LANGUAGE,
+) {
+  const query = {};
+  query[`${field}.${language}`] = value;
+
+  return this.find(query);
+};
+
+// Find with localized content
+ProductsSchema.statics.findLocalized = async function (
+  filter = {},
+  language = DEFAULT_LANGUAGE,
+) {
+  const documents = await this.find(filter);
+  return documents.map((doc) => doc.getAllLocalized(language));
+};
+```
+
+### Aggregation Helpers
+
+```javascript
+ProductsSchema.statics.getProductsByCategory = async function (category) {
+  return this.aggregate([
+    { $match: { product_group: category } },
+    {
+      $group: {
+        _id: '$series',
+        products: { $push: '$$ROOT' },
+        count: { $sum: 1 },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+};
+```
+
+## Virtual Fields
+
+### Computed Properties
+
+```javascript
+// Virtual for full name
+ProductsSchema.virtual('fullName').get(function () {
+  return `${this.distance_code} (${this.packaging}pcs)`;
+});
+
+// Virtual for price range
+ProductsSchema.virtual('priceRange').get(function () {
+  if (!this.price) return null;
+
+  const prices = Object.values(this.price);
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+
+  return { min, max };
+});
+```
+
+## Indexes
+
+### Performance Indexes
+
+```javascript
+// Compound indexes for common queries
+ProductsSchema.index({ series: 1, type: 1 });
+ProductsSchema.index({ product_group: 1, series: 1 });
+
+// Text index for search
+ProductsSchema.index({
+  'name.en': 'text',
+  'name.pl': 'text',
+  'description.en': 'text',
+  'description.pl': 'text',
+});
+
+// Unique indexes
+ProductsSchema.index({ id: 1 }, { unique: true });
+ProductsSchema.index({ key: 1 }, { unique: true, sparse: true });
+```
+
+## Model Export and Usage
+
+### Export Pattern
+
+```javascript
+module.exports = mongoose.model('Products', ProductsSchema);
+```
+
+### Usage in Routes
+
+```javascript
+const Products = require('../../models/Products');
+
+// Use instance methods
+router.get('/:id/localized/:lang', async (req, res) => {
+  const product = await Products.findOne({ id: req.params.id });
+  const localized = product.getAllLocalized(req.params.lang);
+  res.json({ data: localized });
+});
+
+// Use static methods
+router.get('/search/:field/:value', async (req, res) => {
+  const products = await Products.findByLocalized(
+    req.params.field,
+    req.params.value,
+    req.query.lang,
+  );
+  res.json({ data: products });
+});
+```
+
+## Error Handling in Models
+
+### Custom Validation Messages
+
+```javascript
+const ProductsSchema = new mongoose.Schema({
+  email: {
+    type: String,
+    required: [true, 'Email is required'],
+    unique: true,
+    validate: {
+      validator: function (v) {
+        return /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(v);
+      },
+      message: 'Please enter a valid email address',
+    },
+  },
+});
+```
+
+### Handle Duplicate Key Errors
+
+```javascript
+ProductsSchema.post('save', function (error, doc, next) {
+  if (error.name === 'MongoError' && error.code === 11000) {
+    next(new Error('Email already exists'));
+  } else {
+    next(error);
+  }
+});
+```
+
+## Data Migration Patterns
+
+### Migration Helper Methods
+
+```javascript
+ProductsSchema.statics.migrateData = async function (transformFunction) {
+  const cursor = this.find().cursor();
+
+  for (let doc = await cursor.next(); doc != null; doc = await cursor.next()) {
+    const transformed = transformFunction(doc);
+    await doc.updateOne(transformed);
+  }
+};
+```
+
+## Testing Patterns
+
+### Model Testing Setup
+
+```javascript
+// Test helper for creating test documents
+ProductsSchema.statics.createTestProduct = function (overrides = {}) {
+  return new this({
+    id: Math.random(),
+    product_group: 'test',
+    series: 'test',
+    name: { pl: 'Test Product', en: 'Test Product' },
+    price: { PLN: 100 },
+    ...overrides,
+  });
+};
+```
