@@ -1,5 +1,6 @@
 # Use the official Node.js image as the base image
-FROM node:16
+# Updated to Node 18 LTS which uses Debian Bullseye (stable)
+FROM node:18
 
 # Install necessary system dependencies for Puppeteer
 RUN apt-get update && apt-get install -y \
