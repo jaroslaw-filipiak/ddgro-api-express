@@ -1125,7 +1125,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       timestamp: new Date().toISOString(),
     });
     const emailOptions = {
-      from: `DDGRO.EU <noreply@ddpedestals.eu>`,
+      from: `DDGRO.EU <contact@ddgro.eu>`,
       to: to,
       subject: `${
         process.env.NODE_ENV === 'development'
