@@ -6,7 +6,9 @@
       "Bash(curl:*)",
       "Bash(pkill:*)",
       "Bash(netstat:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npm run create:excel-example:*)",
+      "Bash(npm run import:excel:*)"
     ],
     "deny": [],
     "ask": []
