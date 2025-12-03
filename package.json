@@ -7,7 +7,11 @@
     "dev": "nodemon ./bin/www",
     "migrate": "node migrations/run-all-migrations.js dev",
     "migrate:dev": "node migrations/run-all-migrations.js dev",
-    "migrate:prod": "node migrations/run-all-migrations.js prod"
+    "migrate:prod": "node migrations/run-all-migrations.js prod",
+    "import:excel": "node migrations/import-products-from-excel.js",
+    "import:images": "node migrations/download-images-from-gdrive.js",
+    "create:excel-example": "node migrations/create-example-excel.js",
+    "clear:products": "node migrations/clear-all-products.js"
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.4",
@@ -29,6 +33,7 @@
     "passport-local": "^1.0.0",
     "pdfkit": "^0.15.0",
     "pdfmake": "^0.2.12",
-    "puppeteer": "^23.3.0"
+    "puppeteer": "^23.3.0",
+    "xlsx": "^0.18.5"
   }
 }

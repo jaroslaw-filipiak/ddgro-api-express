@@ -17,14 +17,19 @@ router.get('/', async function (req, res, next) {
     console.log(`📊 Products API - Query completed:`, {
       duration: `${duration}ms`,
       count: products.length,
-      dataSize: `${Math.round(dataSize/1024)}KB`,
-      memoryUsage: `${Math.round(process.memoryUsage().heapUsed/1024/1024)}MB`
+      dataSize: `${Math.round(dataSize / 1024)}KB`,
+      memoryUsage: `${Math.round(
+        process.memoryUsage().heapUsed / 1024 / 1024,
+      )}MB`,
     });
 
     res.status(200).json({ data: products });
   } catch (error) {
     const duration = Date.now() - startTime;
-    console.error(`❌ Products API - Error after ${duration}ms:`, error.message);
+    console.error(
+      `❌ Products API - Error after ${duration}ms:`,
+      error.message,
+    );
     next(error);
   }
 });
@@ -67,6 +72,38 @@ router.put('/:id', async function (req, res, next) {
     res.status(200).json({
       message: 'Produkt został zaktualizowany',
       data: product,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get products by series (case-insensitive)
+router.get('/series/:series', async function (req, res, next) {
+  try {
+    let { series } = req.params;
+
+    // Map "clever" slug to "Clever Level"
+    if (series.toLowerCase() === 'clever') {
+      series = 'Clever Level';
+    }
+
+    // Case-insensitive search: matches "standard", "Standard", "STANDARD", etc.
+    const products = await Products.find({
+      series: new RegExp(`^${series}$`, 'i'),
+    });
+
+    // Extract unique ranges from products - checking multiple possible fields
+    const ranges = [
+      ...new Set(products.map((p) => p.height_mm).filter(Boolean)),
+    ];
+
+    res.status(200).json({
+      data: {
+        products,
+        length: products.length,
+        ranges,
+      },
     });
   } catch (error) {
     next(error);

@@ -25,7 +25,11 @@ const createZBIORCZA_TP = (application) => {
   const m_max_sum = summary(application.m_max);
   const m_raptor_sum = summary(application.m_raptor);
 
+  // Remove empty keys from all matrices
   delete m_spiral_sum[''];
+  delete m_standard_sum[''];
+  delete m_max_sum[''];
+  delete m_raptor_sum[''];
 
   let main_keys = '';
 
