@@ -74,14 +74,14 @@ router.get('/preview/:id', async function (req, res, next) {
       return appType; // 'wood' stays as is
     };
 
-    const createPipeline = (series, values, heightKeys) => {
-      // If heightKeys is empty, return empty pipeline that will return no results
-      if (!heightKeys || heightKeys.length === 0) {
+    const createPipeline = (series, values) => {
+      // If main_keys is empty, return empty pipeline that will return no results
+      if (!main_keys || main_keys.length === 0) {
         return [{ $match: { _id: null } }]; // Match nothing
       }
 
-      // Format height_mm keys for database lookup
-      const formattedKeys = heightKeys.map(formatHeightMm);
+      // Format main_keys for database lookup
+      const formattedMainKeys = main_keys.map(formatHeightMm);
 
       // Get correct product type for query
       const productType = getProductType(application.type, application.gap_between_slabs);
@@ -89,7 +89,7 @@ router.get('/preview/:id', async function (req, res, next) {
       return [
         {
           $match: {
-            height_mm: { $in: formattedKeys },
+            height_mm: { $in: formattedMainKeys },
             type: { $regex: new RegExp(productType, 'i') }, // Use regex to match type (handles comma-separated types)
             series: { $regex: new RegExp(`^${series}$`, 'i') }, // case-insensitive match
           },
@@ -98,18 +98,18 @@ router.get('/preview/:id', async function (req, res, next) {
           $addFields: {
             sortKey: {
               $switch: {
-                branches: formattedKeys.map((key, index) => ({
+                branches: formattedMainKeys.map((key, index) => ({
                   case: { $eq: ['$height_mm', key] },
                   then: index,
                 })),
-                default: formattedKeys.length, // Ensures any unmatched documents appear last
+                default: formattedMainKeys.length, // Ensures any unmatched documents appear last
               },
             },
             count: {
               $arrayElemAt: [
                 values,
                 {
-                  $indexOfArray: [formattedKeys, '$height_mm'],
+                  $indexOfArray: [formattedMainKeys, '$height_mm'],
                 },
               ],
             },
@@ -126,25 +126,25 @@ router.get('/preview/:id', async function (req, res, next) {
 
     const products_spiral =
       (await Products.aggregate(
-        createPipeline('spiral', Object.values(zbiorcza_TP.m_spiral), Object.keys(zbiorcza_TP.m_spiral)),
+        createPipeline('spiral', Object.values(zbiorcza_TP.m_spiral)),
       )) || [];
     // console.log('products_spiral:', products_spiral);
 
     const products_standard =
       (await Products.aggregate(
-        createPipeline('standard', Object.values(zbiorcza_TP.m_standard), Object.keys(zbiorcza_TP.m_standard)),
+        createPipeline('standard', Object.values(zbiorcza_TP.m_standard)),
       )) || [];
     // console.log('products_standard:', products_standard);
 
     const products_max =
       (await Products.aggregate(
-        createPipeline('max', Object.values(zbiorcza_TP.m_max), Object.keys(zbiorcza_TP.m_max)),
+        createPipeline('max', Object.values(zbiorcza_TP.m_max)),
       )) || [];
     // console.log('products_max:', products_max);
 
     const products_raptor =
       (await Products.aggregate(
-        createPipeline('raptor', Object.values(zbiorcza_TP.m_raptor), Object.keys(zbiorcza_TP.m_raptor)),
+        createPipeline('raptor', Object.values(zbiorcza_TP.m_raptor)),
       )) || [];
     // console.log('products_raptor:', products_raptor);
 
@@ -194,17 +194,80 @@ router.get('/preview/:id', async function (req, res, next) {
     // console.log('filteredMax:', filteredMax);
     // console.log('filteredRaptor:', filteredRaptor);
 
+    // Helper function to extract height range from height_mm string
+    // "125 - 155 mm" → { from: 125, to: 155 }
+    const getHeightRange = (heightMm) => {
+      if (!heightMm || typeof heightMm !== 'string') return null;
+      const match = heightMm.match(/(\d+)\s*-\s*(\d+)/);
+      if (match) {
+        return { from: parseInt(match[1]), to: parseInt(match[2]) };
+      }
+      return null;
+    };
+
+    // Build orderArr based on main_system and Excel substitution rules
+    // Rules: STANDARD → lower: SPIRAL, higher: MAX
+    //        SPIRAL → higher: MAX
+    //        MAX → lower: SPIRAL
+    //        RAPTOR → no substitutions
     let orderArr = [];
 
-    if (application.type === 'slab') {
-      orderArr = [...filteredSpiral, ...filteredStandard, ...filteredMax];
-    } else if (application.type === 'wood') {
-      orderArr = [
-        ...filteredSpiral,
-        ...filteredStandard,
-        ...filteredMax,
-        ...filteredRaptor,
-      ];
+    switch (application.main_system) {
+      case 'raptor':
+        // RAPTOR: no substitutions
+        orderArr = [...filteredRaptor];
+        break;
+
+      case 'standard':
+        // STANDARD: lower → SPIRAL, main → STANDARD, higher → MAX
+        // Standard covers 30-420mm
+        const standardLower = filteredSpiral.filter((p) => {
+          const range = getHeightRange(p.height_mm);
+          return range && range.to < 30;
+        });
+        const standardMain = filteredStandard;
+        const standardUpper = filteredMax.filter((p) => {
+          const range = getHeightRange(p.height_mm);
+          return range && range.from > 420;
+        });
+        orderArr = [...standardLower, ...standardMain, ...standardUpper];
+        break;
+
+      case 'spiral':
+        // SPIRAL: main → SPIRAL, higher → MAX
+        // Spiral covers 10-210mm
+        const spiralMain = filteredSpiral;
+        const spiralUpper = filteredMax.filter((p) => {
+          const range = getHeightRange(p.height_mm);
+          return range && range.from > 210;
+        });
+        orderArr = [...spiralMain, ...spiralUpper];
+        break;
+
+      case 'max':
+        // MAX: lower → SPIRAL, main → MAX
+        // Max covers 45-950mm
+        const maxLower = filteredSpiral.filter((p) => {
+          const range = getHeightRange(p.height_mm);
+          return range && range.to < 45;
+        });
+        const maxMain = filteredMax;
+        orderArr = [...maxLower, ...maxMain];
+        break;
+
+      default:
+        // Fallback: use all systems based on type
+        if (application.type === 'slab') {
+          orderArr = [...filteredSpiral, ...filteredStandard, ...filteredMax];
+        } else if (application.type === 'wood') {
+          orderArr = [
+            ...filteredSpiral,
+            ...filteredStandard,
+            ...filteredMax,
+            ...filteredRaptor,
+          ];
+        }
+        break;
     }
 
     // console.log('orderArr before filtering:', orderArr);
@@ -424,14 +487,14 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       return appType; // 'wood' stays as is
     };
 
-    const createPipeline = (series, values, heightKeys) => {
-      // If heightKeys is empty, return empty pipeline that will return no results
-      if (!heightKeys || heightKeys.length === 0) {
+    const createPipeline = (series, values) => {
+      // If main_keys is empty, return empty pipeline that will return no results
+      if (!main_keys || main_keys.length === 0) {
         return [{ $match: { _id: null } }]; // Match nothing
       }
 
-      // Format height_mm keys for database lookup
-      const formattedKeys = heightKeys.map(formatHeightMm);
+      // Format main_keys for database lookup
+      const formattedMainKeys = main_keys.map(formatHeightMm);
 
       // Get correct product type for query
       const productType = getProductType(application.type, application.gap_between_slabs);
@@ -439,7 +502,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       return [
         {
           $match: {
-            height_mm: { $in: formattedKeys },
+            height_mm: { $in: formattedMainKeys },
             type: { $regex: new RegExp(productType, 'i') }, // Use regex to match type (handles comma-separated types)
             series: { $regex: new RegExp(`^${series}$`, 'i') },
           },
@@ -448,18 +511,18 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           $addFields: {
             sortKey: {
               $switch: {
-                branches: formattedKeys.map((key, index) => ({
+                branches: formattedMainKeys.map((key, index) => ({
                   case: { $eq: ['$height_mm', key] },
                   then: index,
                 })),
-                default: formattedKeys.length,
+                default: formattedMainKeys.length,
               },
             },
             count: {
               $arrayElemAt: [
                 values,
                 {
-                  $indexOfArray: [formattedKeys, '$height_mm'],
+                  $indexOfArray: [formattedMainKeys, '$height_mm'],
                 },
               ],
             },
@@ -478,28 +541,24 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       createPipeline(
         'spiral',
         Object.values(zbiorcza_TP.m_spiral),
-        Object.keys(zbiorcza_TP.m_spiral),
       ),
     );
     const products_standard = await Products.aggregate(
       createPipeline(
         'standard',
         Object.values(zbiorcza_TP.m_standard),
-        Object.keys(zbiorcza_TP.m_standard),
       ),
     );
     const products_max = await Products.aggregate(
       createPipeline(
         'max',
         Object.values(zbiorcza_TP.m_max),
-        Object.keys(zbiorcza_TP.m_max),
       ),
     );
     const products_raptor = await Products.aggregate(
       createPipeline(
         'raptor',
         Object.values(zbiorcza_TP.m_raptor),
-        Object.keys(zbiorcza_TP.m_raptor),
       ),
     );
 
@@ -538,17 +597,67 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     const filteredMax = filterProducts(products_max, excludeFromMax);
     const filteredRaptor = filterProducts(products_raptor, excludeFromRaptor);
 
+    // Helper function to extract height range from height_mm string
+    const getHeightRange = (heightMm) => {
+      if (!heightMm || typeof heightMm !== 'string') return null;
+      const match = heightMm.match(/(\d+)\s*-\s*(\d+)/);
+      if (match) {
+        return { from: parseInt(match[1]), to: parseInt(match[2]) };
+      }
+      return null;
+    };
+
+    // Build orderArr based on main_system and Excel substitution rules (same as main flow)
     let orderArr = [];
 
-    if (application.type === 'slab') {
-      orderArr = [...filteredSpiral, ...filteredStandard, ...filteredMax];
-    } else if (application.type === 'wood') {
-      orderArr = [
-        ...filteredSpiral,
-        ...filteredStandard,
-        ...filteredMax,
-        ...filteredRaptor,
-      ];
+    switch (application.main_system) {
+      case 'raptor':
+        orderArr = [...filteredRaptor];
+        break;
+
+      case 'standard':
+        const standardLower = filteredSpiral.filter((p) => {
+          const range = getHeightRange(p.height_mm);
+          return range && range.to < 30;
+        });
+        const standardMain = filteredStandard;
+        const standardUpper = filteredMax.filter((p) => {
+          const range = getHeightRange(p.height_mm);
+          return range && range.from > 420;
+        });
+        orderArr = [...standardLower, ...standardMain, ...standardUpper];
+        break;
+
+      case 'spiral':
+        const spiralMain = filteredSpiral;
+        const spiralUpper = filteredMax.filter((p) => {
+          const range = getHeightRange(p.height_mm);
+          return range && range.from > 210;
+        });
+        orderArr = [...spiralMain, ...spiralUpper];
+        break;
+
+      case 'max':
+        const maxLower = filteredSpiral.filter((p) => {
+          const range = getHeightRange(p.height_mm);
+          return range && range.to < 45;
+        });
+        const maxMain = filteredMax;
+        orderArr = [...maxLower, ...maxMain];
+        break;
+
+      default:
+        if (application.type === 'slab') {
+          orderArr = [...filteredSpiral, ...filteredStandard, ...filteredMax];
+        } else if (application.type === 'wood') {
+          orderArr = [
+            ...filteredSpiral,
+            ...filteredStandard,
+            ...filteredMax,
+            ...filteredRaptor,
+          ];
+        }
+        break;
     }
 
     const filterOrder = (arr, lowest, highest) => {

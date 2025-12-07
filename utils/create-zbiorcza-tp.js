@@ -48,6 +48,31 @@ const createZBIORCZA_TP = (application) => {
       break;
   }
 
+  // FALLBACK: If main_system has no products (all values are 0 or empty),
+  // use first available system with products
+  const hasProducts = (matrix) => {
+    return Object.values(matrix).some(count => count > 0);
+  };
+
+  if (!hasProducts(main_keys)) {
+    // Try systems in order: standard -> max -> spiral -> raptor
+    // Standard/Max have more products in database than Spiral
+    const fallbackOrder = [
+      { name: 'standard', matrix: m_standard_sum },
+      { name: 'max', matrix: m_max_sum },
+      { name: 'spiral', matrix: m_spiral_sum },
+      { name: 'raptor', matrix: m_raptor_sum }
+    ];
+
+    for (const system of fallbackOrder) {
+      if (hasProducts(system.matrix)) {
+        main_keys = system.matrix;
+        console.log(`FALLBACK: Using ${system.name} instead of ${application.main_system}`);
+        break;
+      }
+    }
+  }
+
   return {
     main_keys: main_keys,
     m_spiral: m_spiral_sum,
