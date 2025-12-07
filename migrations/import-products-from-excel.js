@@ -165,6 +165,9 @@ async function readExcelFile() {
   let skippedSheets = 0;
   let duplicatesSkipped = 0;
 
+  // Track all skipped products with reasons
+  const skippedProducts = [];
+
   // Process each sheet
   for (let i = 0; i < workbook.SheetNames.length; i++) {
     const sheetName = workbook.SheetNames[i];
@@ -207,6 +210,16 @@ async function readExcelFile() {
         }
       });
       return obj;
+    });
+
+    // Build product_group map by series for this sheet (for auto-fill)
+    const productGroupBySeries = {};
+    jsonData.forEach((row) => {
+      const pg = (row.product_group || row['product group'] || row['grupa produktu'])?.toString().trim();
+      const ser = (row.series || row['seria'])?.toString().trim();
+      if (pg && ser && !productGroupBySeries[ser]) {
+        productGroupBySeries[ser] = pg;
+      }
     });
 
     // For backward compatibility - jsonDataRaw should include row 2
@@ -286,7 +299,7 @@ async function readExcelFile() {
     let sheetDuplicates = 0;
     for (let idx = 0; idx < jsonData.length; idx++) {
       const row = jsonData[idx];
-      const product = transformExcelRowToProduct(row, sheetName);
+      const product = transformExcelRowToProduct(row, sheetName, productGroupBySeries, skippedProducts);
       if (product) {
         // Check if we've already seen this product ID
         const productIdStr = product.id.toString();
@@ -338,6 +351,9 @@ async function readExcelFile() {
   if (duplicatesSkipped > 0) {
     console.log(`   🔄 Pominięto duplikatów: ${duplicatesSkipped}`);
   }
+  if (skippedProducts.length > 0) {
+    console.log(`   ⚠️  Pominięto produktów z błędami: ${skippedProducts.length}`);
+  }
   console.log(`   📦 Produktów do zapisu: ${allProducts.length}`);
 
   // Verify no duplicates in final array
@@ -352,6 +368,33 @@ async function readExcelFile() {
   }
 
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+
+  // Log skipped products details
+  if (skippedProducts.length > 0) {
+    console.log(`\n⚠️  PRODUKTY POMINIĘTE Z POWODU BŁĘDÓW (${skippedProducts.length}):`);
+    console.log(`${'─'.repeat(80)}`);
+
+    // Group by reason
+    const byReason = {};
+    skippedProducts.forEach(skip => {
+      if (!byReason[skip.reason]) {
+        byReason[skip.reason] = [];
+      }
+      byReason[skip.reason].push(skip);
+    });
+
+    Object.entries(byReason).forEach(([reason, products]) => {
+      console.log(`\n❌ ${reason} (${products.length} produktów):`);
+      products.slice(0, 10).forEach(skip => {
+        console.log(`   • Arkusz: "${skip.sheet}" | ID: ${skip.id || 'BRAK'} | Series: ${skip.series || 'BRAK'}`);
+        if (skip.height_mm) console.log(`     height_mm: ${skip.height_mm}`);
+      });
+      if (products.length > 10) {
+        console.log(`   ... i ${products.length - 10} więcej`);
+      }
+    });
+    console.log(`${'─'.repeat(80)}\n`);
+  }
 
   // Add summary to file log
   addToFileLog('========================================');
@@ -423,14 +466,14 @@ function distanceCodeToImagePath(distanceCode) {
   return null;
 }
 
-function transformExcelRowToProduct(row, sheetName) {
+function transformExcelRowToProduct(row, sheetName, productGroupBySeries = {}, skippedProducts = []) {
   // Column mapping based on your Excel structure:
   // product_group, series, id, distance_code, type,
   // name_pl, name_en, name_de, name_fr, name_es,
   // height_mm, height_from, height_to, price_pln, price_eur, price_usd
 
   // Handle both possible field names (with or without spaces)
-  const product_group = (
+  let product_group = (
     row.product_group ||
     row['product group'] ||
     row['grupa produktu']
@@ -439,9 +482,28 @@ function transformExcelRowToProduct(row, sheetName) {
     .trim();
   const series = (row.series || row['seria'])?.toString().trim();
   const id = (row.id || row['ID'])?.toString().trim();
+  const height_mm = (row.height_mm || '')?.toString().trim();
 
-  // Skip rows with missing essential data
-  if (!product_group || !series || !id) {
+  // Skip rows with missing series or id
+  if (!series || !id) {
+    return null;
+  }
+
+  // Auto-fill product_group from series map if missing
+  if (!product_group && series && productGroupBySeries[series]) {
+    product_group = productGroupBySeries[series];
+    console.log(`   🔧 Auto-uzupełniono product_group dla ${id} (${series}): "${product_group}"`);
+  }
+
+  // Skip rows with missing essential data after auto-fill
+  if (!product_group) {
+    skippedProducts.push({
+      sheet: sheetName,
+      id: id,
+      series: series,
+      height_mm: height_mm,
+      reason: 'Brak product_group (nie można auto-uzupełnić)'
+    });
     return null;
   }
 
@@ -450,7 +512,13 @@ function transformExcelRowToProduct(row, sheetName) {
 
   // Skip rows without Polish name (required for validation)
   if (!name_pl || name_pl.length === 0) {
-    console.warn(`⚠️  Pomijam produkt ${id} - brak polskiej nazwy`);
+    skippedProducts.push({
+      sheet: sheetName,
+      id: id,
+      series: series,
+      height_mm: height_mm,
+      reason: 'Brak polskiej nazwy (name_pl)'
+    });
     return null;
   }
 
