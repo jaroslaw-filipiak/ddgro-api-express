@@ -12,6 +12,9 @@ const path = require('path');
 const puppeteer = require('puppeteer');
 
 const { createZBIORCZA_TP } = require('../../utils/create-zbiorcza-tp');
+const {
+  getKeysPerSeries,
+} = require('../../utils/substitution-rules');
 const Products = require('../../models/Products');
 
 const sendEmail = require('../../services/sendEmail');
@@ -47,8 +50,7 @@ router.get('/preview/:id', async function (req, res, next) {
 
     const zbiorcza_TP = createZBIORCZA_TP(application);
     const main_keys = Object.keys(zbiorcza_TP.main_keys);
-
-    // console.log('main_keys', main_keys);
+    const keysPerSeries = getKeysPerSeries(application, zbiorcza_TP);
 
     // Helper function to format height_mm for database lookup
     // Converts "120-220" to "120 - 220 mm"
@@ -74,77 +76,62 @@ router.get('/preview/:id', async function (req, res, next) {
       return appType; // 'wood' stays as is
     };
 
-    const createPipeline = (series, values) => {
-      // If main_keys is empty, return empty pipeline that will return no results
-      if (!main_keys || main_keys.length === 0) {
+    const createPipeline = (series, keys, countObj) => {
+      if (!keys || keys.length === 0) {
         return [{ $match: { _id: null } }]; // Match nothing
       }
+      const formattedKeys = keys.map(formatHeightMm);
+      const values = keys.map((k) => countObj[k] ?? 0);
 
-      // Format main_keys for database lookup
-      const formattedMainKeys = main_keys.map(formatHeightMm);
-
-      // Get correct product type for query
       const productType = getProductType(application.type, application.gap_between_slabs);
 
       return [
         {
           $match: {
-            height_mm: { $in: formattedMainKeys },
-            type: { $regex: new RegExp(productType, 'i') }, // Use regex to match type (handles comma-separated types)
-            series: { $regex: new RegExp(`^${series}$`, 'i') }, // case-insensitive match
+            height_mm: { $in: formattedKeys },
+            type: { $regex: new RegExp(productType, 'i') },
+            series: { $regex: new RegExp(`^${series}$`, 'i') },
           },
         },
         {
           $addFields: {
             sortKey: {
               $switch: {
-                branches: formattedMainKeys.map((key, index) => ({
+                branches: formattedKeys.map((key, index) => ({
                   case: { $eq: ['$height_mm', key] },
                   then: index,
                 })),
-                default: formattedMainKeys.length, // Ensures any unmatched documents appear last
+                default: formattedKeys.length,
               },
             },
             count: {
               $arrayElemAt: [
                 values,
-                {
-                  $indexOfArray: [formattedMainKeys, '$height_mm'],
-                },
+                { $indexOfArray: [formattedKeys, '$height_mm'] },
               ],
             },
           },
         },
-        {
-          $sort: { sortKey: 1 },
-        },
-        {
-          $project: { sortKey: 0 }, // Remove the sortKey field from the final output
-        },
+        { $sort: { sortKey: 1 } },
+        { $project: { sortKey: 0 } },
       ];
     };
 
     const products_spiral =
       (await Products.aggregate(
-        createPipeline('spiral', Object.values(zbiorcza_TP.m_spiral)),
+        createPipeline('spiral', keysPerSeries.spiralKeys, zbiorcza_TP.m_spiral || {}),
       )) || [];
-    // console.log('products_spiral:', products_spiral);
-
     const products_standard =
       (await Products.aggregate(
-        createPipeline('standard', Object.values(zbiorcza_TP.m_standard)),
+        createPipeline('standard', keysPerSeries.standardKeys, zbiorcza_TP.m_standard || {}),
       )) || [];
-    // console.log('products_standard:', products_standard);
-
     const products_max =
       (await Products.aggregate(
-        createPipeline('max', Object.values(zbiorcza_TP.m_max)),
+        createPipeline('max', keysPerSeries.maxKeys, zbiorcza_TP.m_max || {}),
       )) || [];
-    // console.log('products_max:', products_max);
-
     const products_raptor =
       (await Products.aggregate(
-        createPipeline('raptor', Object.values(zbiorcza_TP.m_raptor)),
+        createPipeline('raptor', keysPerSeries.raptorKeys, zbiorcza_TP.m_raptor || {}),
       )) || [];
     // console.log('products_raptor:', products_raptor);
 
@@ -228,7 +215,7 @@ router.get('/preview/:id', async function (req, res, next) {
         const standardMain = filteredStandard;
         const standardUpper = filteredMax.filter((p) => {
           const range = getHeightRange(p.height_mm);
-          return range && range.from > 420;
+          return range && range.to > 420;
         });
         orderArr = [...standardLower, ...standardMain, ...standardUpper];
         break;
@@ -239,7 +226,7 @@ router.get('/preview/:id', async function (req, res, next) {
         const spiralMain = filteredSpiral;
         const spiralUpper = filteredMax.filter((p) => {
           const range = getHeightRange(p.height_mm);
-          return range && range.from > 210;
+          return range && range.to > 210;
         });
         orderArr = [...spiralMain, ...spiralUpper];
         break;
@@ -430,6 +417,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
 
     const zbiorcza_TP = createZBIORCZA_TP(application);
     const main_keys = Object.keys(zbiorcza_TP.main_keys);
+    const keysPerSeries = getKeysPerSeries(application, zbiorcza_TP);
 
     // Get currency based on language
     const getCurrency = (lang) => {
@@ -487,23 +475,18 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       return appType; // 'wood' stays as is
     };
 
-    const createPipeline = (series, values) => {
-      // If main_keys is empty, return empty pipeline that will return no results
-      if (!main_keys || main_keys.length === 0) {
-        return [{ $match: { _id: null } }]; // Match nothing
+    const createPipeline = (series, keys, countObj) => {
+      if (!keys || keys.length === 0) {
+        return [{ $match: { _id: null } }];
       }
-
-      // Format main_keys for database lookup
-      const formattedMainKeys = main_keys.map(formatHeightMm);
-
-      // Get correct product type for query
+      const formattedKeys = keys.map(formatHeightMm);
+      const values = keys.map((k) => countObj[k] ?? 0);
       const productType = getProductType(application.type, application.gap_between_slabs);
-
       return [
         {
           $match: {
-            height_mm: { $in: formattedMainKeys },
-            type: { $regex: new RegExp(productType, 'i') }, // Use regex to match type (handles comma-separated types)
+            height_mm: { $in: formattedKeys },
+            type: { $regex: new RegExp(productType, 'i') },
             series: { $regex: new RegExp(`^${series}$`, 'i') },
           },
         },
@@ -511,55 +494,37 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           $addFields: {
             sortKey: {
               $switch: {
-                branches: formattedMainKeys.map((key, index) => ({
+                branches: formattedKeys.map((key, index) => ({
                   case: { $eq: ['$height_mm', key] },
                   then: index,
                 })),
-                default: formattedMainKeys.length,
+                default: formattedKeys.length,
               },
             },
             count: {
               $arrayElemAt: [
                 values,
-                {
-                  $indexOfArray: [formattedMainKeys, '$height_mm'],
-                },
+                { $indexOfArray: [formattedKeys, '$height_mm'] },
               ],
             },
           },
         },
-        {
-          $sort: { sortKey: 1 },
-        },
-        {
-          $project: { sortKey: 0 },
-        },
+        { $sort: { sortKey: 1 } },
+        { $project: { sortKey: 0 } },
       ];
     };
 
     const products_spiral = await Products.aggregate(
-      createPipeline(
-        'spiral',
-        Object.values(zbiorcza_TP.m_spiral),
-      ),
+      createPipeline('spiral', keysPerSeries.spiralKeys, zbiorcza_TP.m_spiral || {}),
     );
     const products_standard = await Products.aggregate(
-      createPipeline(
-        'standard',
-        Object.values(zbiorcza_TP.m_standard),
-      ),
+      createPipeline('standard', keysPerSeries.standardKeys, zbiorcza_TP.m_standard || {}),
     );
     const products_max = await Products.aggregate(
-      createPipeline(
-        'max',
-        Object.values(zbiorcza_TP.m_max),
-      ),
+      createPipeline('max', keysPerSeries.maxKeys, zbiorcza_TP.m_max || {}),
     );
     const products_raptor = await Products.aggregate(
-      createPipeline(
-        'raptor',
-        Object.values(zbiorcza_TP.m_raptor),
-      ),
+      createPipeline('raptor', keysPerSeries.raptorKeys, zbiorcza_TP.m_raptor || {}),
     );
 
     const excludeFromSpiral = [
@@ -623,7 +588,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         const standardMain = filteredStandard;
         const standardUpper = filteredMax.filter((p) => {
           const range = getHeightRange(p.height_mm);
-          return range && range.from > 420;
+          return range && range.to > 420;
         });
         orderArr = [...standardLower, ...standardMain, ...standardUpper];
         break;
@@ -632,7 +597,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
         const spiralMain = filteredSpiral;
         const spiralUpper = filteredMax.filter((p) => {
           const range = getHeightRange(p.height_mm);
-          return range && range.from > 210;
+          return range && range.to > 210;
         });
         orderArr = [...spiralMain, ...spiralUpper];
         break;
