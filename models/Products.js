@@ -144,7 +144,7 @@ const ProductsSchema = new mongoose.Schema(
       type: Object,
       default: {
         pl: 'PLN',
-        en: 'USD',
+        en: 'EUR',
         de: 'EUR',
         fr: 'EUR',
         es: 'EUR',

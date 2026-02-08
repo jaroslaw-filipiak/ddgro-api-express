@@ -5,6 +5,9 @@
   "scripts": {
     "start": "node ./bin/www",
     "dev": "nodemon ./bin/www",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:e2e": "jest application-preview.e2e.test.js",
     "migrate": "node migrations/run-all-migrations.js dev",
     "migrate:dev": "node migrations/run-all-migrations.js dev",
     "migrate:prod": "node migrations/run-all-migrations.js prod",
@@ -35,5 +38,9 @@
     "pdfmake": "^0.2.12",
     "puppeteer": "^23.3.0",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4"
   }
 }
