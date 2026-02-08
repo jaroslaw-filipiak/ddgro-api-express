@@ -419,11 +419,11 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     const main_keys = Object.keys(zbiorcza_TP.main_keys);
     const keysPerSeries = getKeysPerSeries(application, zbiorcza_TP);
 
-    // Get currency based on language
+    // Get currency based on language (EN uses EUR like other EU locales)
     const getCurrency = (lang) => {
       const languageCurrencyMap = {
         pl: 'PLN',
-        en: 'USD',
+        en: 'EUR',
         de: 'EUR',
         fr: 'EUR',
         es: 'EUR',
@@ -1124,8 +1124,8 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
                 margin: [0, 60, 0, 10],
               },
               {
-                // TODO: przygotowac katalogi w wersjach jezykowych  i podmienic na produkcji
-                text: 'ddgro.eu/ddgro-' + applicationLang,
+                // Bezpieczny link HTTPS do katalogu w wersji językowej
+                text: 'https://ddgro.eu/ddgro-' + applicationLang,
                 style: 'qrLink',
                 alignment: 'center',
                 margin: [0, 0, 0, 40],
@@ -1290,6 +1290,12 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       fileSize: `${Math.round(pdfStats.size / 1024)}KB`,
       timestamp: new Date().toISOString(),
     });
+    // Szablon e-mail według języka aplikacji (musi istnieć plik order_XX.hbs)
+    const supportedEmailLangs = ['pl', 'en', 'de', 'fr', 'es'];
+    const emailTemplateLang = supportedEmailLangs.includes(applicationLang)
+      ? applicationLang
+      : 'en';
+
     const emailOptions = {
       from: `DDGRO.EU <contact@ddgro.eu>`,
       to: to,
@@ -1298,10 +1304,12 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
           ? t.email.devSubject
           : t.email.subject
       }`,
-      template: `order_${applicationLang}`,
+      template: `order_${emailTemplateLang}`,
       context: {
         items,
         total,
+        lang: applicationLang,
+        currency,
       },
       attachments: [
         {
