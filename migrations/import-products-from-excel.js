@@ -164,6 +164,8 @@ async function readExcelFile() {
   let importedSheets = 0;
   let skippedSheets = 0;
   let duplicatesSkipped = 0;
+  /** Suma wierszy spełniających warunki (product_group, series, id) w zakładkach, które użytkownik zaimportował */
+  let totalEligibleRowsInImportedSheets = 0;
 
   // Track all skipped products with reasons
   const skippedProducts = [];
@@ -289,6 +291,11 @@ async function readExcelFile() {
       continue;
     }
 
+    const rowsWithId = jsonData.filter(
+      (row) => (row.id || row['ID'] || '').toString().trim()
+    ).length;
+    totalEligibleRowsInImportedSheets += rowsWithId;
+
     console.log(`⏳ Importowanie...`);
     addToFileLog(`IMPORTING SHEET: "${sheetName}"`);
     addToFileLog(`  Products count: ${validProductCount}`);
@@ -344,17 +351,23 @@ async function readExcelFile() {
     importedSheets++;
   }
 
+  const notImported = totalEligibleRowsInImportedSheets - allProducts.length;
+
   console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
   console.log(`📊 PODSUMOWANIE:`);
+  console.log(`   📋 Wierszy spełniających warunki (w zaimportowanych zakładkach): ${totalEligibleRowsInImportedSheets}`);
+  console.log(`   📦 Zaimportowano produktów: ${allProducts.length}`);
+  if (notImported > 0) {
+    console.log(`   ❌ Nie zaimportowano: ${notImported} (duplikaty: ${duplicatesSkipped}, błędy walidacji: ${skippedProducts.length})`);
+  }
   console.log(`   ✅ Zaimportowano zakładek: ${importedSheets}`);
   console.log(`   ⏭️  Pominięto zakładek: ${skippedSheets}`);
-  if (duplicatesSkipped > 0) {
+  if (duplicatesSkipped > 0 && notImported === 0) {
     console.log(`   🔄 Pominięto duplikatów: ${duplicatesSkipped}`);
   }
-  if (skippedProducts.length > 0) {
+  if (skippedProducts.length > 0 && notImported === 0) {
     console.log(`   ⚠️  Pominięto produktów z błędami: ${skippedProducts.length}`);
   }
-  console.log(`   📦 Produktów do zapisu: ${allProducts.length}`);
 
   // Verify no duplicates in final array
   const finalIds = allProducts.map((p) => p.id.toString());
@@ -400,13 +413,16 @@ async function readExcelFile() {
   addToFileLog('========================================');
   addToFileLog('SUMMARY');
   addToFileLog('========================================');
+  addToFileLog(`Eligible rows in imported sheets: ${totalEligibleRowsInImportedSheets}`);
+  addToFileLog(`Total products to save: ${allProducts.length}`);
+  addToFileLog(`Not imported: ${notImported} (duplicates: ${duplicatesSkipped}, validation errors: ${skippedProducts.length})`);
   addToFileLog(`Sheets imported: ${importedSheets}`);
   addToFileLog(`Sheets skipped: ${skippedSheets}`);
-  addToFileLog(`Duplicates skipped: ${duplicatesSkipped}`);
-  addToFileLog(`Total products to save: ${allProducts.length}`);
+  addToFileLog('');
+  addToFileLog('Pominięte pozycje – szczegóły poniżej (DUPLICATES i VALIDATION ERRORS).');
   addToFileLog('');
 
-  // Log detailed list of duplicates if any
+  // Log detailed list of duplicates if any (do pliku i konsoli)
   if (duplicatesList.length > 0) {
     console.log(
       `\n🔄 SZCZEGÓŁOWA LISTA POMINIĘTYCH DUPLIKATÓW (${duplicatesList.length}):`,
@@ -414,7 +430,7 @@ async function readExcelFile() {
     console.log(`${'─'.repeat(80)}`);
 
     addToFileLog('========================================');
-    addToFileLog(`DUPLICATES LIST (${duplicatesList.length} items)`);
+    addToFileLog(`POMINIĘTE – DUPLIKATY (${duplicatesList.length} pozycji)`);
     addToFileLog('========================================');
 
     duplicatesList.forEach((dup, idx) => {
@@ -424,7 +440,6 @@ async function readExcelFile() {
       console.log(`   📄 Zakładka: "${dup.sheet}"`);
       console.log(`   📝 ${truncName}`);
 
-      // Clean file log
       addToFileLog(`${idx + 1}. ID: ${dup.id}`);
       addToFileLog(`   Series: ${dup.series}`);
       addToFileLog(`   Sheet: "${dup.sheet}"`);
@@ -434,29 +449,60 @@ async function readExcelFile() {
     console.log(`${'─'.repeat(80)}\n`);
   }
 
+  // Lista pominiętych z powodu błędów walidacji – do pliku logu
+  if (skippedProducts.length > 0) {
+    addToFileLog('========================================');
+    addToFileLog(`POMINIĘTE – BŁĘDY WALIDACJI (${skippedProducts.length} pozycji)`);
+    addToFileLog('========================================');
+    const byReason = {};
+    skippedProducts.forEach((skip) => {
+      if (!byReason[skip.reason]) byReason[skip.reason] = [];
+      byReason[skip.reason].push(skip);
+    });
+    Object.entries(byReason).forEach(([reason, items]) => {
+      addToFileLog(`Powód: ${reason} (${items.length})`);
+      items.forEach((skip, idx) => {
+        addToFileLog(`  ${idx + 1}. Sheet: "${skip.sheet}" | ID: ${skip.id || '–'} | Series: ${skip.series || '–'}`);
+        if (skip.height_mm) addToFileLog(`     height_mm: ${skip.height_mm}`);
+      });
+      addToFileLog('');
+    });
+  }
+
   return allProducts;
 }
 
 /**
- * Convert distance_code to local image path
- * Input:  STA-030-045-K3-(100) or SPI-010-017-D3-(125)
- * Output: /assets/products/030-045-k3-100pcs.jpg
+ * Convert distance_code to local image path (zgodne z download-images-from-gdrive.js)
+ * Obsługiwane formaty: z (QTY), bez (QTY), RAP-XL-*, akcesoria
  */
 function distanceCodeToImagePath(distanceCode) {
   if (!distanceCode) return null;
 
   const code = distanceCode.toString().trim();
 
-  // Pattern: PREFIX-HEIGHT_FROM-HEIGHT_TO-TYPE-(QTY)
-  // Examples: STA-030-045-K3-(100), SPI-010-017-D3-(125), MAX-045-075-D3-(54)
-  const match = code.match(/^[A-Z]+-(\d+)-(\d+)-([A-Z0-9]+)-\((\d+)\)$/i);
-
-  if (match) {
-    const [, heightFrom, heightTo, type, qty] = match;
+  // PREFIX-HEIGHT_FROM-HEIGHT_TO-TYPE-(QTY)
+  const withQty = code.match(/^[A-Z]+-(\d+)-(\d+)-([A-Z0-9]+)-\((\d+)\)$/i);
+  if (withQty) {
+    const [, heightFrom, heightTo, type, qty] = withQty;
     return `products/${heightFrom}-${heightTo}-${type.toLowerCase()}-${qty}pcs.jpg`;
   }
 
-  // Try alternative patterns for accessories (e.g., ACC-SBR-200X200X3-(60))
+  // PREFIX-HEIGHT_FROM-HEIGHT_TO-TYPE (bez (QTY)) – STA-220-320-K3, SPI-090-110-D3, MAX-350-550-DAD
+  const noQty = code.match(/^[A-Z]+-(\d+)-(\d+)-([A-Z0-9]+)$/i);
+  if (noQty) {
+    const [, heightFrom, heightTo, type] = noQty;
+    return `products/${heightFrom}-${heightTo}-${type.toLowerCase()}.jpg`;
+  }
+
+  // RAP-XL-NUM-NUM
+  const rapXl = code.match(/^RAP-XL-(\d+)-(\d+)$/i);
+  if (rapXl) {
+    const [, a, b] = rapXl;
+    return `products/rap-xl-${a}-${b}.jpg`;
+  }
+
+  // Akcesoria: PREFIX-NAME-(QTY)
   const altMatch = code.match(/^[A-Z]+-([A-Z0-9-]+)-\((\d+)\)$/i);
   if (altMatch) {
     const [, name, qty] = altMatch;

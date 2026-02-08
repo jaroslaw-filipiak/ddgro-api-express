@@ -24,31 +24,45 @@ if (!fs.existsSync(IMAGES_DIR)) {
 
 /**
  * Convert distance_code to image filename
- * Input:  STA-030-045-K3-(100) or SPI-010-017-D3-(125)
- * Output: 030-045-k3-100pcs.jpg or 010-017-d3-125pcs.jpg
+ * Supported formats:
+ *   STA-030-045-K3-(100)  -> 030-045-k3-100pcs.jpg
+ *   STA-220-320-K3        -> 220-320-k3.jpg (bez (QTY))
+ *   SPI-090-110-D3        -> 090-110-d3.jpg
+ *   RAP-XL-125-155        -> rap-xl-125-155.jpg
  */
 function distanceCodeToFilename(distanceCode) {
   if (!distanceCode) return null;
-  
+
   const code = distanceCode.toString().trim();
-  
-  // Pattern: PREFIX-HEIGHT_FROM-HEIGHT_TO-TYPE-(QTY)
-  // Examples: STA-030-045-K3-(100), SPI-010-017-D3-(125), MAX-045-075-D3-(54)
-  const match = code.match(/^[A-Z]+-(\d+)-(\d+)-([A-Z0-9]+)-\((\d+)\)$/i);
-  
-  if (match) {
-    const [, heightFrom, heightTo, type, qty] = match;
+
+  // PREFIX-HEIGHT_FROM-HEIGHT_TO-TYPE-(QTY)
+  const withQty = code.match(/^[A-Z]+-(\d+)-(\d+)-([A-Z0-9]+)-\((\d+)\)$/i);
+  if (withQty) {
+    const [, heightFrom, heightTo, type, qty] = withQty;
     return `${heightFrom}-${heightTo}-${type.toLowerCase()}-${qty}pcs.jpg`;
   }
-  
-  // Try alternative patterns for accessories
-  // Example: accessories might have different patterns
+
+  // PREFIX-HEIGHT_FROM-HEIGHT_TO-TYPE (bez (QTY)) – np. STA-220-320-K3, SPI-090-110-D3, MAX-350-550-DAD
+  const noQty = code.match(/^[A-Z]+-(\d+)-(\d+)-([A-Z0-9]+)$/i);
+  if (noQty) {
+    const [, heightFrom, heightTo, type] = noQty;
+    return `${heightFrom}-${heightTo}-${type.toLowerCase()}.jpg`;
+  }
+
+  // RAP-XL-NUM-NUM – np. RAP-XL-125-155
+  const rapXl = code.match(/^RAP-XL-(\d+)-(\d+)$/i);
+  if (rapXl) {
+    const [, a, b] = rapXl;
+    return `rap-xl-${a}-${b}.jpg`;
+  }
+
+  // Akcesoria: PREFIX-NAME-(QTY)
   const altMatch = code.match(/^([A-Z]+)-([A-Z0-9-]+)-\((\d+)\)$/i);
   if (altMatch) {
     const [, prefix, name, qty] = altMatch;
     return `${name.toLowerCase()}-${qty}pcs.jpg`;
   }
-  
+
   return null;
 }
 
@@ -196,46 +210,110 @@ async function main() {
   const workbook = XLSX.readFile(excelPath);
   console.log(`📊 Found ${workbook.SheetNames.length} sheets\n`);
   
-  // Collect all products with images
+  // Kolumny: D=3 (id), E=4 (image URL), F=5 (distance_code). Dane od wiersza 2 (po 2 nagłówkach).
+  const COL_ID = 3;
+  const COL_IMAGE_URL = 4;
+  const COL_DISTANCE_CODE = 5;
+
   const products = [];
   const skippedSheets = ['export (40)', 'Podstawianie poza zakresem wys.'];
-  
+
+  // Diagnostyka: dlaczego 72 a nie 102
+  const stats = {
+    rowsWithId: 0,
+    noImageUrl: 0,
+    noDistanceCode: 0,
+    noFilenameMatch: 0,
+    noGoogleId: 0,
+    bySheet: {}
+  };
+  /** Lista pominiętych distance_code (arkusz, id, wartość) – żeby zobaczyć format i dodać wzorzec */
+  const failedDistanceCodes = [];
+
   for (const sheetName of workbook.SheetNames) {
     if (skippedSheets.some(s => sheetName.includes(s))) {
       continue;
     }
-    
+
     const ws = workbook.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
-    
-    // Skip header rows (0, 1), start from row 2
+    if (!stats.bySheet[sheetName]) stats.bySheet[sheetName] = { rowsWithId: 0, noImageUrl: 0, noDistanceCode: 0, noFilenameMatch: 0, noGoogleId: 0, added: 0 };
+
     for (let r = 2; r < data.length; r++) {
       const row = data[r];
-      if (!row || !row[3]) continue; // Skip empty rows
-      
-      const id = row[3];           // Column D - id
-      const imageUrl = row[4];     // Column E - image URL
-      const distanceCode = row[5]; // Column F - distance_code
-      
-      if (imageUrl && distanceCode) {
-        const filename = distanceCodeToFilename(distanceCode);
-        const googleId = extractGoogleDriveId(imageUrl);
-        
-        if (filename && googleId) {
-          products.push({
-            id,
-            distanceCode,
-            filename,
-            googleId,
-            imageUrl,
-            sheet: sheetName
-          });
-        }
+      const id = row && row[COL_ID] != null ? String(row[COL_ID]).trim() : '';
+      if (!id) continue;
+
+      stats.rowsWithId++;
+      stats.bySheet[sheetName].rowsWithId++;
+
+      const imageUrl = row[COL_IMAGE_URL] != null ? String(row[COL_IMAGE_URL]).trim() : '';
+      const distanceCode = row[COL_DISTANCE_CODE] != null ? String(row[COL_DISTANCE_CODE]).trim() : '';
+
+      if (!imageUrl) {
+        stats.noImageUrl++;
+        stats.bySheet[sheetName].noImageUrl++;
+        continue;
       }
+      if (!distanceCode) {
+        stats.noDistanceCode++;
+        stats.bySheet[sheetName].noDistanceCode++;
+        continue;
+      }
+
+      const filename = distanceCodeToFilename(distanceCode);
+      const googleId = extractGoogleDriveId(imageUrl);
+
+      if (!googleId) {
+        stats.noGoogleId++;
+        stats.bySheet[sheetName].noGoogleId++;
+        continue;
+      }
+      if (!filename) {
+        stats.noFilenameMatch++;
+        stats.bySheet[sheetName].noFilenameMatch++;
+        failedDistanceCodes.push({ sheet: sheetName, id, distanceCode });
+        continue;
+      }
+
+      stats.bySheet[sheetName].added++;
+      products.push({
+        id,
+        distanceCode,
+        filename,
+        googleId,
+        imageUrl,
+        sheet: sheetName
+      });
     }
   }
-  
+
   console.log(`📦 Found ${products.length} products with images\n`);
+
+  // Raport: dlaczego nie 102
+  const totalRows = stats.rowsWithId;
+  const lost = totalRows - products.length;
+  if (totalRows > 0 || products.length > 0) {
+    console.log('📋 Diagnostyka (Excel: D=id, E=URL, F=distance_code):');
+    console.log(`   Wiersze z ID (kol. D): ${totalRows}`);
+    console.log(`   → Do pobrania (mają URL + distance_code + rozpoznany format): ${products.length}`);
+    if (lost > 0) {
+      console.log(`   Pominięte (${lost}):`);
+      if (stats.noImageUrl) console.log(`      - brak URL w kol. E: ${stats.noImageUrl}`);
+      if (stats.noDistanceCode) console.log(`      - brak distance_code w kol. F: ${stats.noDistanceCode}`);
+      if (stats.noGoogleId) console.log(`      - URL nie z Google Drive: ${stats.noGoogleId}`);
+      if (stats.noFilenameMatch) console.log(`      - distance_code w nieobsługiwanym formacie: ${stats.noFilenameMatch}`);
+    }
+    console.log('');
+  }
+
+  if (failedDistanceCodes.length > 0) {
+    console.log('❌ Nieobsługiwane distance_code (arkusz | id | distance_code) – dopisz wzorzec w distanceCodeToFilename():');
+    failedDistanceCodes.forEach(({ sheet, id, distanceCode }) => {
+      console.log(`   ${sheet} | ${id} | ${JSON.stringify(distanceCode)}`);
+    });
+    console.log('');
+  }
   
   // Check which images already exist
   const existingFiles = new Set(fs.readdirSync(IMAGES_DIR));
