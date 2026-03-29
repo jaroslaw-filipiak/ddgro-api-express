@@ -15,6 +15,9 @@ const { createZBIORCZA_TP } = require('../../utils/create-zbiorcza-tp');
 const {
   getKeysPerSeries,
 } = require('../../utils/substitution-rules');
+const {
+  reconcilePedestalLineCounts,
+} = require('../../utils/reconcile-pedestal-counts');
 const Products = require('../../models/Products');
 
 const sendEmail = require('../../services/sendEmail');
@@ -210,7 +213,7 @@ router.get('/preview/:id', async function (req, res, next) {
         // Standard covers 30-420mm
         const standardLower = filteredSpiral.filter((p) => {
           const range = getHeightRange(p.height_mm);
-          return range && range.to < 30;
+          return range && range.to <= 30;
         });
         const standardMain = filteredStandard;
         const standardUpper = filteredMax.filter((p) => {
@@ -236,7 +239,7 @@ router.get('/preview/:id', async function (req, res, next) {
         // Max covers 45-950mm
         const maxLower = filteredSpiral.filter((p) => {
           const range = getHeightRange(p.height_mm);
-          return range && range.to < 45;
+          return range && range.to <= 45;
         });
         const maxMain = filteredMax;
         orderArr = [...maxLower, ...maxMain];
@@ -583,7 +586,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       case 'standard':
         const standardLower = filteredSpiral.filter((p) => {
           const range = getHeightRange(p.height_mm);
-          return range && range.to < 30;
+          return range && range.to <= 30;
         });
         const standardMain = filteredStandard;
         const standardUpper = filteredMax.filter((p) => {
@@ -605,7 +608,7 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       case 'max':
         const maxLower = filteredSpiral.filter((p) => {
           const range = getHeightRange(p.height_mm);
-          return range && range.to < 45;
+          return range && range.to <= 45;
         });
         const maxMain = filteredMax;
         orderArr = [...maxLower, ...maxMain];
@@ -714,18 +717,18 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
       return items
         .filter((item) => {
           const normalizedHeight = normalizeHeight(item.height_mm);
-          const itemCount = Math.round(countObj[normalizedHeight] || 0);
+          const raw = Number(countObj[normalizedHeight]) || 0;
           return (
-            itemCount > 0 && item.series?.toLowerCase() === series.toLowerCase()
+            raw > 0 && item.series?.toLowerCase() === series.toLowerCase()
           );
         })
         .map((item) => {
           const normalizedHeight = normalizeHeight(item.height_mm);
-          const count = Math.round(countObj[normalizedHeight] || 0);
+          const count = Number(countObj[normalizedHeight]) || 0;
           const priceNet = getPriceNet(item);
           return {
             ...item,
-            count: count,
+            count,
             total_price: (count * priceNet).toFixed(2),
           };
         });
@@ -755,6 +758,12 @@ router.post('/send-order-summary/:id', async function (req, res, next) {
     );
 
     items = [...spiralItems, ...standardItems, ...maxItems, ...raptorItems];
+
+    items = reconcilePedestalLineCounts(
+      items,
+      application.supports_count,
+      getPriceNet,
+    );
 
     // Add products from application.products with full info
     const additionalProducts = application.products || [];

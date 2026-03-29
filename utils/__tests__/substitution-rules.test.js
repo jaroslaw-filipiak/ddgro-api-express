@@ -64,7 +64,7 @@ describe('getKeysPerSeries – RAPTOR (brak podstawień)', () => {
 });
 
 describe('getKeysPerSeries – STANDARD (niższe→SPIRAL, wyższe→MAX)', () => {
-  it('dla zakresu 150–500 mm zwraca SPIRAL (to<30), STANDARD 30–420, MAX >420', () => {
+  it('dla zakresu 150–500 mm zwraca SPIRAL (to<=30), STANDARD 30–420, MAX >420', () => {
     const application = { main_system: 'standard' };
     const zbiorcza_TP = {
       m_spiral: { '10-17': 5, '17-30': 3 },
@@ -73,7 +73,7 @@ describe('getKeysPerSeries – STANDARD (niższe→SPIRAL, wyższe→MAX)', () =
       m_raptor: {},
     };
     const result = getKeysPerSeries(application, zbiorcza_TP);
-    expect(result.spiralKeys).toEqual(['10-17']);
+    expect(result.spiralKeys).toEqual(['10-17', '17-30']);
     expect(result.standardKeys).toEqual(['120-220', '220-320', '320-420']);
     expect(result.maxKeys).toEqual(['350-550']);
     expect(result.raptorKeys).toEqual([]);
@@ -122,7 +122,7 @@ describe('getKeysPerSeries – SPIRAL (wyższe→MAX)', () => {
 });
 
 describe('getKeysPerSeries – MAX (niższe→SPIRAL)', () => {
-  it('dla zakresu 30–100 mm zwraca SPIRAL (to<45) + MAX', () => {
+  it('dla zakresu 30–100 mm zwraca SPIRAL (to<=45) + MAX', () => {
     const application = { main_system: 'max' };
     const zbiorcza_TP = {
       m_spiral: { '17-30': 5, '30-50': 10 },
@@ -206,7 +206,7 @@ describe('getKeysPerSeries – scenariusze podstawiania (ok. 20 przypadków)', (
     expect(result.maxKeys).toEqual(['350-550', '550-750', '750-950']);
   });
 
-  it('4. STANDARD: SPIRAL "17-30" (to=30) NIE wchodzi do spiralKeys (wymóg to<30)', () => {
+  it('4. STANDARD: SPIRAL "17-30" (to=30) wchodzi do spiralKeys (wymóg to<=30)', () => {
     const application = { main_system: 'standard' };
     const zbiorcza_TP = {
       m_spiral: { '17-30': 5 },
@@ -215,10 +215,10 @@ describe('getKeysPerSeries – scenariusze podstawiania (ok. 20 przypadków)', (
       m_raptor: {},
     };
     const result = getKeysPerSeries(application, zbiorcza_TP);
-    expect(result.spiralKeys).toEqual([]);
+    expect(result.spiralKeys).toEqual(['17-30']);
   });
 
-  it('5. STANDARD: oba podstawienia – SPIRAL (to<30) + MAX (to>420)', () => {
+  it('5. STANDARD: oba podstawienia – SPIRAL (to<=30) + MAX (to>420)', () => {
     const application = { main_system: 'standard' };
     const zbiorcza_TP = {
       m_spiral: { '10-17': 8 },
@@ -282,7 +282,7 @@ describe('getKeysPerSeries – scenariusze podstawiania (ok. 20 przypadków)', (
     expect(result.maxKeys).toEqual(['150-350', '350-550', '750-950']);
   });
 
-  it('10. MAX: tylko w zakresie 45–950 mm – brak podstawienia SPIRAL', () => {
+  it('10. MAX: tylko w zakresie powyżej 45 mm – brak podstawienia SPIRAL (spiral od do<=45)', () => {
     const application = { main_system: 'max' };
     const zbiorcza_TP = {
       m_spiral: { '90-110': 20 },
@@ -295,7 +295,7 @@ describe('getKeysPerSeries – scenariusze podstawiania (ok. 20 przypadków)', (
     expect(result.maxKeys).toEqual(['75-150', '350-550']);
   });
 
-  it('11. MAX: granica 45 – SPIRAL "30-50" (to=50) NIE wchodzi do spiralKeys (wymóg to<45)', () => {
+  it('11. MAX: SPIRAL "30-50" (to=50) NIE wchodzi do spiralKeys (wymóg to<=45)', () => {
     const application = { main_system: 'max' };
     const zbiorcza_TP = {
       m_spiral: { '30-50': 25 },
@@ -307,7 +307,7 @@ describe('getKeysPerSeries – scenariusze podstawiania (ok. 20 przypadków)', (
     expect(result.spiralKeys).toEqual([]);
   });
 
-  it('12. MAX: tylko SPIRAL to<45 (10-17, 17-30)', () => {
+  it('12. MAX: tylko SPIRAL to<=45 (10-17, 17-30)', () => {
     const application = { main_system: 'max' };
     const zbiorcza_TP = {
       m_spiral: { '10-17': 5, '17-30': 10 },
