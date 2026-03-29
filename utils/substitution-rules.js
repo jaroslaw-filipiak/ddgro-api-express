@@ -53,9 +53,11 @@ function getKeysPerSeries(application, zbiorcza_TP) {
       };
     case 'standard':
       return {
+        // SPIRAL dla niskich wysokości: klucz "17-30" ma to=30 — musi być <= 30,
+        // inaczej cały bucket znika z oferty (tylko STANDARD 30–45, 45–70).
         spiralKeys: spiralKeys.filter((k) => {
           const r = parseRangeKey(k);
-          return r && r.to < 30;
+          return r && r.to <= 30;
         }),
         standardKeys,
         maxKeys: maxKeys.filter((k) => {
@@ -78,7 +80,7 @@ function getKeysPerSeries(application, zbiorcza_TP) {
       return {
         spiralKeys: spiralKeys.filter((k) => {
           const r = parseRangeKey(k);
-          return r && r.to < 45;
+          return r && r.to <= 45;
         }),
         standardKeys: [],
         maxKeys,

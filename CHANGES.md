@@ -1,5 +1,43 @@
 # DDGRO Backend - Lista Zmian
 
+## Wersja 2.1.5 — 2026-03-29
+
+### Oferta PDF / podstawienia serii (STANDARD + SPIRAL przy niskiej wysokości)
+
+**Problem:** Przy `main_system: standard` i zakresie wysokości obejmującym mm poniżej 30 (np. lowest 25 mm) macierz `m_spiral` ma niezerowy bucket **`17-30`**, ale klucz ten ma `to = 30` w `parseRangeKey`, więc warunek **`to < 30`** go wykluczał. W efekcie `spiralKeys` było puste, w PDF tylko STANDARD, a suma sztuk z linii nie zgadzała się z `supports_count`.
+
+**Zmiany:**
+
+| Obszar | Plik | Opis |
+|--------|------|------|
+| Klucze SPIRAL/MAX przy podstawieniach | `utils/substitution-rules.js` | Dla **standard**: `r.to <= 30` (włącza **`17-30`**). Dla **max**: `r.to <= 45` (spójna granica). |
+| Kolejność produktów w ofercie | `routes/api/application.js` | `standardLower`: `height.to <= 30`; `maxLower`: `height.to <= 45` (dwa miejsca: główny flow + send-order). |
+| Testy | `utils/__tests__/substitution-rules.test.js` | Zaktualizowane oczekiwania (m.in. **`17-30`** w `spiralKeys` przy STANDARD). |
+
+**Wpływ:** Przy hybrydzie STANDARD pojawia się linia **SPIRAL** dla niskich zakresów; suma z macierzy znowu przechodzi przez pipeline produktów.
+
+---
+
+### Zgodność ilości w PDF z `supports_count` (podpory vs podkładki)
+
+**Problem:** Ilości z macierzy są ułamkowe; **`Math.round` na każdej linii** dawało sumę większą niż `supports_count` (np. 35+130+156 = **321** przy **320**), co rozjeżdżało się z podkładkami ustawionymi na `supports_count`.
+
+**Zmiany:**
+
+| Obszar | Plik | Opis |
+|--------|------|------|
+| Rekonsyliacja całkowitych sztuk | `utils/reconcile-pedestal-counts.js` | Nowa funkcja: metoda **największych reszt** — suma linii podpór = `application.supports_count`. |
+| Generowanie zamówienia / PDF | `routes/api/application.js` | `addCountAndPriceToItems` zostawia **surowe** wartości z macierzy; po złożeniu spiral+standard+max+raptor wywołanie **`reconcilePedestalLineCounts`** (przed `application.products` i akcesoriami). |
+| Testy | `utils/__tests__/reconcile-pedestal-counts.test.js` | Scenariusz z realnym rozjazdem 321 → 320. |
+
+**Wpływ:** W PDF suma sztuk **podpór regulowanych** zgadza się z **`supports_count`** i z ilością podkładek, gdy ta wynika z `supports_count`.
+
+---
+
+**Wersja aplikacji:** `VER` w `.env` / zmiennych środowiska oraz `version` w `server/package.json` — **2.1.5** (endpoint główny zwraca `version` z `process.env.VER`).
+
+---
+
 ## Data: 2025-09-09
 
 ### ❗ KRYTYCZNE ZMIANY W OBLICZENIACH I GENEROWANIU PDF

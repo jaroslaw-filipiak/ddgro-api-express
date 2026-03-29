@@ -1,6 +1,6 @@
 {
   "name": "ddgro-nowy-backend",
-  "version": "0.0.0",
+  "version": "2.1.5",
   "private": true,
   "scripts": {
     "start": "node ./bin/www",
